@@ -133,6 +133,30 @@ class MCPClient:
 
         return True
 
+
+    def build_request_caller(self, server_name):
+
+        def sender(method, arguments):
+            server_name = "google-calendar"
+            request = {
+                "jsonrpc": "2.0",
+                "id": self.clients[server_name]["req_id"],
+                "method": "tools/call",
+                "params": {
+                    "name": method,
+                    "arguments": arguments
+                }
+            }
+
+            self.clients[server_name]["process"].stdin.write(json.dumps(request) + "\n")
+            self.clients[server_name]["process"].stdin.flush()
+            self.clients[server_name]["req_id"] += 1
+
+            time.sleep(1)
+            return self.get_latest_message(server_name)
+        
+        return sender
+
     def send_request(self, server_name, method, arguments):
         request = {
             "jsonrpc": "2.0",
