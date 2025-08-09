@@ -6,7 +6,7 @@ import json
 import subprocess
 import threading
 import time
-
+import os
 class MCPClient:
     def __init__(self):
         # (server_name: process)
@@ -35,7 +35,7 @@ class MCPClient:
             print(f"Starting server {server_name}...")
             process = subprocess.Popen(
                 server_config["startup"],
-                cwd=server_config["cwd"],
+                cwd=server_config["cwd"] if server_config["cwd"] else os.getcwd(),
                 stdin=subprocess.PIPE,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
@@ -58,6 +58,7 @@ class MCPClient:
 
             def read_stdout(pipe, pipe_name):
                 """Read and parse JSON messages from stdout"""
+                print(f"Reading stdout from {pipe_name}...")
                 for line in iter(pipe.readline, ""):
                     line = line.strip()
                     if line:
@@ -72,6 +73,7 @@ class MCPClient:
             
             def read_stderr(pipe, pipe_name):
                 """Read stderr logs (usually debug info, not JSON)"""
+                print(f"Reading stderr from {pipe_name}...")
                 for line in iter(pipe.readline, ""):
                     line = line.strip()
                     if line:
@@ -94,12 +96,13 @@ class MCPClient:
             print(f"Error starting server {server_name}: {e}")
             return False
 
+
         init_request = {
             "jsonrpc": "2.0",
             "id": self.clients[server_name]["req_id"],
             "method": "initialize",
             "params": {
-                "protocolVersion": "2025-06-18",
+                "protocolVersion": "2025-03-26",
                 "capabilities": {},
                 "clientInfo": {
                     "name": "aegis",
@@ -110,26 +113,32 @@ class MCPClient:
 
         self.clients[server_name]["req_id"] += 1
 
-
-        try:
-            print(f"Sending initialization request to {server_name}...")
-            self.clients[server_name]["process"].stdin.write(json.dumps(init_request) + "\n")
-            self.clients[server_name]["process"].stdin.flush()
-        except Exception as e:
-            print(f"Error sending initialization request to {server_name}: {e}")
-            return False
-
-        time.sleep(1)
-
+        self.clients[server_name]["process"].stdin.write(json.dumps(init_request) + "\n")
+        self.clients[server_name]["process"].stdin.flush()
+        
         initialized_notification = {
             "jsonrpc": "2.0",
             "method": "notifications/initialized",
             "params": {}
         }
+        time.sleep(10)
 
         print(f"Writing to stdin: {json.dumps(initialized_notification)}")
         self.clients[server_name]["process"].stdin.write(json.dumps(initialized_notification) + '\n')
         self.clients[server_name]["process"].stdin.flush()
+
+        # if server_config["auth"]:
+        #     print(f"Authorizing {server_name}...")
+        #     auth_request = {
+        #         "jsonrpc": "2.0",
+        #         "id": self.clients[server_name]["req_id"],
+        #         "method": "auth/authorize",
+        #         "params": {}
+        #     }
+        #     self.clients[server_name]["process"].stdin.write(json.dumps(auth_request) + "\n")
+        #     self.clients[server_name]["process"].stdin.flush()
+        #     self.clients[server_name]["req_id"] += 1
+
 
         return True
 
@@ -137,7 +146,7 @@ class MCPClient:
     def build_request_caller(self, server_name):
 
         def sender(method, arguments):
-            server_name = "google-calendar"
+            print(f"Sending request to {server_name} with method {method} and arguments {arguments}")
             request = {
                 "jsonrpc": "2.0",
                 "id": self.clients[server_name]["req_id"],

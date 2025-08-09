@@ -1,6 +1,7 @@
 """Google Calendar MCP Server implementation."""
 
 import json
+import os
 import sys
 import argparse
 from datetime import datetime
@@ -129,7 +130,7 @@ async def handle_call_tool(
         arguments = {}
 
     # Authorize and build calendar service
-    creds = authorize()
+    creds = authorize(token_path=os.getenv("GOOGLE_APPLICATION_TOKENS"), credentials_path=os.getenv("GOOGLE_APPLICATION_CREDENTIALS_WEB"))
     calendar = build("calendar", "v3", credentials=creds)
 
     try:
@@ -469,7 +470,8 @@ async def main():
     try:
         # Parse command line arguments
         parser = argparse.ArgumentParser(description="Google Calendar MCP Server")
-        parser.add_argument("command", nargs="?", default="run", help="Command to run (init or run)")
+        parser.add_argument("command", nargs="?", default="run", help="Command to run (init, run, or cleanup)")
+
         args = parser.parse_args()
 
         if args.command == "init":
@@ -478,11 +480,19 @@ async def main():
             print("Init functionality not yet implemented for Python version.", file=sys.stderr)
             print("Please manually configure Claude Desktop to use this server.", file=sys.stderr)
             return
+        
+        if args.command == "cleanup":
+            print("Cleaning up OAuth ports...", file=sys.stderr)
+            from .auth.auth import kill_processes_on_ports
+            oauth_ports = [8080, 8081, 8082, 8083, 8084, 8085]
+            kill_processes_on_ports(oauth_ports)
+            print("Cleanup complete!", file=sys.stderr)
+            return
 
         # Authorize Google Calendar access
         print("Initializing Google Calendar authorization...", file=sys.stderr)
         try:
-            authorize()
+            authorize(token_path=os.getenv("GOOGLE_APPLICATION_TOKENS"), credentials_path=os.getenv("GOOGLE_APPLICATION_CREDENTIALS_WEB"))
             print("Google Calendar authorization successful!", file=sys.stderr)
         except Exception as e:
             print(f"Error during Google Calendar authorization: {e}", file=sys.stderr)

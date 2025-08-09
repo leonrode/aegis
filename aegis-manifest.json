@@ -4,8 +4,8 @@
     "servers": {
         "google-calendar": {
             "io": "stdio", 
-            "startup": ["python3", "-m", "mcp-google-calendar.mcp_server_google_calendar"],
-            "cwd": "local-mcp-test",
+            "startup": ["python3", "-m", "local-mcp-test.mcp-google-calendar.mcp_server_google_calendar"],
+            "cwd": "",
             "auth": true,
             "tools": [
                 {
@@ -436,6 +436,437 @@
                             },
                         
                         "required": ["calendarId", "eventId"]
+                    }
+                }
+            ]
+        },
+        "google-gmail": {
+            "io": "stdio", 
+            "startup": ["python3", "-m", "gmail-mcp.src.gmail.server", "--creds-file-path", "credentials-web.json", "--token-path", "gmail-mcp/token.json"],
+            "cwd": "",
+            "auth": true,
+            "tools": [
+                {
+                    "name": "send-email",
+                    "description": "Send an email to a recipient",
+                    "params": {
+                        "type": "object",
+                        "properties": {
+                            "recipient_id": {
+                                "type": "string",
+                                "description": "The ID of the recipient to send the email to"
+                            },
+                            "subject": {
+                                "type": "string",
+                                "description": "The subject of the email"
+                            },
+                            "message": {
+                                "type": "string",
+                                "description": "The body of the email"
+                            }
+                        },
+                        "required": ["recipient_id", "subject", "message"]
+                    }
+                },
+                {
+                    "name": "get-unread-emails",
+                    "description": "Get all unread emails in the user's inbox"
+                },
+                {
+                    "name": "read-email",
+                    "description": "Read an email from the user's inbox",
+                    "params": {
+                        "type": "object",
+                        "properties": {
+                            "email_id": {
+                                "type": "string",
+                                "description": "The ID of the email to read"
+                            }
+                        },
+                        "required": ["email_id"]
+                    }
+                },
+                {
+                    "name": "open-email",
+                    "description": "Open an email from the user's inbox in the browser",
+                    "params": {
+                        "type": "object",
+                        "properties": {
+                            "email_id": {
+                                "type": "string",
+                                "description": "The ID of the email to open in the browser"
+                            }
+                        },
+                        "required": ["email_id"]
+                    }
+                },
+                {
+                    "name": "trash-email",
+                    "description": "Trash an email from the user's inbox",
+                    "params": {
+                        "type": "object",
+                        "properties": {
+                            "email_id": {
+                                "type": "string",
+                                "description": "The ID of the email to trash"
+                            }
+                        },
+                        "required": ["email_id"]
+                    }
+                },
+                {
+                    "name": "mark-email-as-read",
+                    "description": "Mark an email as read in the user's inbox",
+                    "params": {
+                        "type": "object",
+                        "properties": {
+                            "email_id": {
+                                "type": "string",
+                                "description": "The ID of the email to mark as read"
+                            }
+                        },
+                        "required": ["email_id"]
+                    }
+                },
+                {
+                    "name": "create-draft",
+                    "description": "Create a draft email in the user's draft folder",
+                    "params": {
+                        "type": "object",
+                        "properties": {
+                            "recipient_id": {
+                                "type": "string",
+                                "description": "The ID of the recipient to send the email to"
+                            },
+                            "subject": {
+                                "type": "string",
+                                "description": "The subject of the email"
+                            },
+                            "message": {
+                                "type": "string",
+                                "description": "The body of the email"
+                            }
+                        },
+                        "required": ["recipient_id", "subject", "message"]
+                    }
+                },
+                {
+                    "name": "list-drafts",
+                    "description": "List all drafts in the user's draft folder"
+                },
+                {   
+                    "name": "list-labels",
+                    "description": "List all labels in the user's inbox"
+                },
+                {
+                    "name": "create-label",
+                    "description": "Create a new label in the user's inbox",
+                    "params": {
+                        "type": "object",
+                        "properties": {
+                            "name": {
+                                "type": "string",
+                                "description": "The name of the label to create"
+                            }
+                        },
+                        "required": ["name"]
+                    }
+                },
+                {
+                    "name": "apply-label",
+                    "description": "Apply a label to an email",
+                    "params": {
+                        "type": "object",
+                        "properties": {
+                            "email_id": {
+                                "type": "string",
+                                "description": "The ID of the email to apply the label to"
+                            },
+                            "label_id": {
+                                "type": "string",
+                                "description": "The ID of the label to apply"
+                            }
+                        },
+                        "required": ["email_id", "label_id"]
+                    }
+                },
+                {
+                    "name": "remove-label",
+                    "description": "Remove a label from an email",
+                    "params": {
+                        "type": "object",
+                        "properties": {
+                            "email_id": {
+                                "type": "string",
+                                "description": "The ID of the email to remove the label from"
+                            },
+                            "label_id": {
+                                "type": "string",
+                                "description": "The ID of the label to remove"
+                            }
+                        },
+                        "required": ["email_id", "label_id"]
+                    }
+                },
+                {
+                    "name": "search-by-label",
+                    "description": "Search for emails by label",
+                    "params": {
+                        "type": "object",
+                        "properties": {
+                            "label_id": {
+                                "type": "string",
+                                "description": "The ID of the label to search by"
+                            }
+                        },
+                        "required": ["label_id"]
+                    }
+                },
+                {
+                    "name": "list-filters",
+                    "description": "List all filters in the user's inbox"
+                },
+                {
+                    "name": "get-filter",
+                    "description": "Get a filter by ID",
+                    "params": {
+                        "type": "object",
+                        "properties": {
+                            "filter_id": {
+                                "type": "string",
+                                "description": "The ID of the filter to get"
+                            }
+                        },
+                        "required": ["filter_id"]
+                    }
+                },
+                {
+                    "name": "create-filter",
+                    "description": "Create a new filter in the user's inbox",
+                    "params": {
+                        "type": "object",
+                        "properties": {
+                            "from_email": {
+                                "type": "string",
+                                "description": "The ID of the recipient to send the email to"
+                            },
+                            "to_email": {
+                                "type": "string",
+                                "description": "The ID of the recipient to send the email to"
+                            },
+                            "subject": {
+                                "type": "string",
+                                "description": "The subject of the email"
+                            },
+                            "query": {
+                                "type": "string",
+                                "description": "The query to search for"
+                            },
+                            "has_attachment": {
+                                "type": "boolean",
+                                "description": "Whether the email has an attachment"
+                            },
+                            "exclude_chats": {
+                                "type": "boolean",
+                                "description": "Whether to exclude chats"
+                            },
+                            "size_comparison": {
+                                "type": "string",
+                                "description": "The size comparison to search for"
+                            },
+                            "size": {
+                                "type": "integer",
+                                "description": "The size of the email"
+                            },
+                            "add_label_ids": {
+                                "type": "array",
+                                "description": "The labels to add to the email"
+                            },
+                            "remove_label_ids": {
+                                "type": "array",
+                                "description": "The labels to remove from the email"
+                            },
+                            "forward_to": {
+                                "type": "string",
+                                "description": "The email to forward the email to"
+                            }
+                        }
+                    },
+                    "anyOf": [
+                        { "required": ["from_email"] },
+                        { "required": ["to_email"] },
+                        { "required": ["subject"] },
+                        { "required": ["query"] },
+                        { "required": ["has_attachment"] },
+                        { "required": ["exclude_chats"] },
+                        { "required": ["size_comparison"] },
+                        { "required": ["size"] },
+                        { "required": ["add_label_ids"] },
+                        { "required": ["remove_label_ids"] },
+                        { "required": ["forward_to"] }
+                    ]
+                },
+                {
+                    "name": "delete-filter",
+                    "description": "Delete a filter by ID",
+                    "params": {
+                        "type": "object",
+                        "properties": {
+                            "filter_id": {
+                                "type": "string",
+                                "description": "The ID of the filter to delete"
+                            }
+                        },
+                        "required": ["filter_id"]
+                    }
+                },
+                {
+                    "name": "search-emails",
+                    "description": "Search for emails by query",
+                    "params": {
+                        "type": "object",
+                        "properties": {
+                            "query": {
+                                "type": "string",
+                                "description": "The query to search for"
+                            },
+                            "max_results": {
+                                "type": "integer",
+                                "description": "The maximum number of results to return",
+                                "default": 50
+                            }
+                        },
+                        "required": ["query"]
+                    }
+                },
+                {
+                    "name": "create-folder",
+                    "description": "Create a new folder in the user's inbox",
+                    "params": {
+                        "type": "object",
+                        "properties": {
+                            "name": {
+                                "type": "string",
+                                "description": "The name of the folder to create"
+                            }
+                        },
+                        "required": ["name"]
+                    }
+                },
+                {
+                    "name": "move-to-folder",
+                    "description": "Move an email to a folder",
+                    "params": {
+                        "type": "object",
+                        "properties": {
+                            "email_id": {
+                                "type": "string",
+                                "description": "The ID of the email to move"
+                            },
+                            "folder_id": {
+                                "type": "string",
+                                "description": "The ID of the folder to move the email to"
+                            }
+                        },
+                        "required": ["email_id", "folder_id"]
+                    }
+                },
+                {
+                    "name": "list-folders",
+                    "description": "List all folders in the user's inbox"
+                },
+                {
+                    "name": "rename-label",
+                    "description": "Rename a label by ID",
+                    "params": {
+                        "type": "object",
+                        "properties": {
+                            "label_id": {
+                                "type": "string",
+                                "description": "The ID of the label to rename"
+                            },
+                            "new_name": {
+                                "type": "string",
+                                "description": "The new name of the label"
+                            }
+                        },
+                        "required": ["label_id", "new_name"]
+                    }
+                },
+                {
+                    "name": "delete-label",
+                    "description": "Delete a label by ID",
+                    "params": {
+                        "type": "object",
+                        "properties": {
+                            "label_id": {
+                                "type": "string",
+                                "description": "The ID of the label to delete"
+                            }
+                        },
+                        "required": ["label_id"]
+                    }
+                },
+                {
+                    "name": "archive-email",
+                    "description": "Archive an email by ID",
+                    "params": {
+                        "type": "object",
+                        "properties": {
+                            "email_id": {
+                                "type": "string",
+                                "description": "The ID of the email to archive"
+                            }
+                        },
+                        "required": ["email_id"]
+                    }
+                },
+                {
+                    "name": "batch-archive",
+                    "description": "Archive a batch of emails by query",
+                    "params": {
+                        "type": "object",
+                        "properties": {
+                            "query": {
+                                "type": "string",
+                                "description": "The query to search for"
+                            },
+                            "max_emails": {
+                                "type": "integer",
+                                "description": "The maximum number of emails to archive",
+                                "default": 100
+                            }
+                        },
+                        "required": ["query"]
+                    }
+                },
+                {
+                    "name": "list-archived",
+                    "description": "List all archived emails in the user's inbox",
+                    "params": {
+                        "type": "object",
+                        "properties": {
+                            "max_results": {
+                                "type": "integer",
+                                "description": "The maximum number of results to return",
+                                "default": 50
+                            }
+                        },
+                        "required": ["max_results"]
+                    }
+                },
+                {
+                    "name": "restore-to-inbox",
+                    "description": "Restore an email to the user's inbox",
+                    "params": {
+                        "type": "object",
+                        "properties": {
+                            "email_id": {
+                                "type": "string",
+                                "description": "The ID of the email to restore"
+                            }
+                        },
+                        "required": ["email_id"]
                     }
                 }
             ]

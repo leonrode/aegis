@@ -4,6 +4,7 @@ import json
 import os
 from pathlib import Path
 from typing import Optional
+import sys
 
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
@@ -12,30 +13,29 @@ from google_auth_oauthlib.flow import InstalledAppFlow
 from .scopes import SCOPES
 
 
-def get_project_root() -> Path:
-    """Get the project root directory."""
-    return Path(__file__).parent.parent.parent.parent
 
 
 def get_token_path() -> Path:
     """Get the path to the token file."""
-    return get_project_root() / "token.json"
+    return Path(os.getenv("GOOGLE_APPLICATION_TOKENS"))
 
 
 def get_credentials_path() -> Path:
     """Get the path to the credentials file."""
-    return get_project_root() / "mcp-google-calendar" / "mcp_server_google_calendar" / "credentials.json"
+    return Path(os.getenv("GOOGLE_APPLICATION_CREDENTIALS_WEB"))
 
 
 def load_saved_credentials() -> Optional[Credentials]:
     """Load saved credentials from token.json if it exists."""
     token_path = get_token_path()
+
     if token_path.exists():
         try:
             return Credentials.from_authorized_user_info(
                 json.loads(token_path.read_text()), SCOPES
             )
-        except Exception:
+        except Exception as e:
+            print(f"Failed to load saved credentials {e}", file=sys.stderr)
             return None
     return None
 
@@ -46,10 +46,11 @@ def save_credentials(creds: Credentials) -> None:
     token_path.write_text(creds.to_json())
 
 
-def authorize() -> Credentials:
+def authorize(token_path: str, credentials_path: str) -> Credentials:
     """Authorize and return Google Calendar API credentials."""
     import sys
     print("Starting Google Calendar authentication...", file=sys.stderr)
+    
     
     creds = load_saved_credentials()
     
@@ -81,15 +82,15 @@ def authorize() -> Credentials:
             # Use a fixed port for easier OAuth configuration
             # You need to add http://localhost:8080/ to your Google Cloud Console OAuth credentials
             try:
-                creds = flow.run_local_server(port=8080)
+                creds = flow.run_local_server(port=8080, prompt="consent")
             except OSError as e:
                 if "Address already in use" in str(e):
                     print("Port 8080 is in use, trying port 8081...", file=sys.stderr)
                     try:
-                        creds = flow.run_local_server(port=8081)
+                        creds = flow.run_local_server(port=8081, prompt="consent")
                     except OSError:
                         print("Port 8081 also in use, trying port 8082...", file=sys.stderr)
-                        creds = flow.run_local_server(port=8082)
+                        creds = flow.run_local_server(port=8082, prompt="consent")
                 else:
                     raise
             print("Authentication completed successfully!", file=sys.stderr)

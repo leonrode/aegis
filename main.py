@@ -14,10 +14,14 @@ class AegisEngine:
     def __init__(self):
         self.client = MCPClient()
         self.client.engage_mcp_server("google-calendar")
+        self.client.engage_mcp_server("google-gmail")
 
         self.tools = []
         self.available_tools = {}
         self.load_manifest_into_functions()
+
+        print(self.tools)
+        print(self.available_tools)
 
         self.tool_config = None
         self.google_client = None
@@ -40,9 +44,9 @@ class AegisEngine:
                     parameters=tool.get("params", {"type": "object"}),
                 )
                 function_declarations.append(fd)
+                
+                self.available_tools[tool["name"]] = self.client.build_request_caller(_service_name)
 
-        for tool in function_declarations:
-            self.available_tools[tool.name] = self.client.build_request_caller(tool.name)
 
         if function_declarations:
             self.tools = [types.Tool(function_declarations=function_declarations)]
@@ -59,7 +63,19 @@ class AegisEngine:
 
     def take_query(self, query):
         print(query)
-        conversation_history = [Part.from_text(text=query)]
+        prompt = """
+        You are a helpful assistant that can use a WIDE variety of tools from the calendar, Gmail, and other services.
+        If a user asks for something related to the calendar, you should use the calendar tools available to you.
+        If a user asks for something related to Gmail, you should use the Gmail tools available to you.
+        Emails are given in the form of IDs. Once you have an email ID, you can use the appropriate Gmail tool to get the email content.
+
+
+        All tools you need are probably available to you. Use them.
+
+        You can use as many tools as you need to answer the user's query. Use them sequentially as you see fit. For example, to get the latest email,
+        you use the get-unread-emails tool, get the first email ID, then use the read-email tool to get the email content, and finally use the open-email tool to open the email in the browser.
+        """
+        conversation_history = [Part.from_text(text=prompt), Part.from_text(text=query)]
     
         while True:
             print("\n--- Calling Gemini ---")
@@ -114,6 +130,7 @@ class AegisEngine:
                     print(f"Error: Function '{function_name}' not found.")
             
             # Append the tool execution results to the conversation history
+            print("Function responses: ", function_responses)
             conversation_history.extend(function_responses)
             # The loop will now continue, sending the tool results back to Gemini
             time.sleep(2)
@@ -123,4 +140,4 @@ class AegisEngine:
 
 
 aegis = AegisEngine()
-aegis.take_query("What are events on my calendar today? The calendar id is 'leon.rode13@gmail.com'. List only max 3 events.")
+aegis.take_query("Can you get me all unread emails in my inbox? When you get all the email IDs, take the first one and use the read-email tool to get the email content. Then use the open-email tool to open the email in the browser.")

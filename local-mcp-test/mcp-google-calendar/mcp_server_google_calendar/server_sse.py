@@ -8,7 +8,7 @@ from datetime import datetime
 import re
 import pytz
 from dateutil import tz
-
+import os
 from googleapiclient.discovery import build
 from pydantic import ValidationError
 import uvicorn
@@ -41,7 +41,7 @@ def get_calendar_service():
         return _calendar_service
     
     # Authenticate and create new service (only once)
-    creds = authorize()
+    creds = authorize(token_path=os.getenv("GOOGLE_APPLICATION_TOKENS"), credentials_path=os.getenv("GOOGLE_APPLICATION_CREDENTIALS_WEB"))
     _calendar_service = build("calendar", "v3", credentials=creds)
     return _calendar_service
 
@@ -51,7 +51,7 @@ def initialize_calendar_service():
     global _calendar_service, _user_timezone
     try:
         print("🚀 Starting Google Calendar MCP Server with SSE transport...")
-        creds = authorize()
+        creds = authorize(token_path=os.getenv("GOOGLE_APPLICATION_TOKENS"), credentials_path=os.getenv("GOOGLE_APPLICATION_CREDENTIALS_WEB"))
         _calendar_service = build("calendar", "v3", credentials=creds)
         print("✅ Authentication successful!")
         

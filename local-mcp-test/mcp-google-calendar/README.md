@@ -81,6 +81,20 @@ On first run, the server will automatically open your browser for OAuth authenti
 
 This server can run in two modes:
 
+### Port Cleanup
+
+If you encounter issues with OAuth ports being occupied, you can clean them up:
+
+```bash
+# Using the server command
+python -m mcp_server_google_calendar cleanup
+
+# Or using the standalone cleanup script
+python cleanup_ports.py
+```
+
+The cleanup will automatically run when the server starts, but you can also run it manually if needed.
+
 ### STDIO Mode (for Claude Desktop)
 
 **Configure Claude Desktop:**
