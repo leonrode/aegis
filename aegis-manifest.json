@@ -3,9 +3,13 @@
     "version": "0.1.0",
     "servers": {
         "google-calendar": {
-            "io": "stdio", 
-            "control_prompt": "You are an intelligent agent that has access to a user's Google Calendar. Your goal is to help the user manage their schedule by translating their natural language requests into one or more tool calls.\n\n***\n## ## General Instructions\n\n* Current Time: Always use the get-current-date tool to establish the current date and time before processing any time-related requests. This ensures your knowledge is up-to-date.\n* Timezone Awareness: Use the get-timezone-info tool if the user's query implies a need for timezone awareness (e.g., scheduling with people in different locations). By default, assume all times are in the user's current timezone.\n* Sequential Logic: Think step-by-step. Complex requests may require multiple tool calls. For instance, to update an event, you may first need to find the event's ID. To check if someone is free, you may first need to get their calendar ID.\n* Resource IDs: Many tools require a calendarId or an eventId. These IDs are not known by the user. You must devise a plan to get these IDs first. If a user says \"my calendar\" or \"my primary calendar,\" you can use the special string \"primary\" as the calendarId.\n* Be Proactive: If a user's request is ambiguous, ask clarifying questions before acting. If you can't find a specific event or calendar, inform the user and present them with a list of options.\n\n***\n## ## Tool Usage and Information Paths\n\nHere is a map of the tools and the most efficient way to use them to fulfill user requests.\n\n### ### 🗺️ Information Map & Paths\n\n#### 1. Listing Resources (The Starting Point)\n\nIf you need to find an ID for a calendar or an event, start here.\n\n* list-calendars: Use this as your first step whenever a user refers to a calendar other than their \"primary\" one (e.g., \"the team calendar,\" \"my personal calendar\"). This tool will give you a list of all calendars the user has access to, each with its name and id.\n* get-events: Once you have a calendarId (either \"primary\" or from list-calendars), use this tool to find events. You can search by time range (timeMin, timeMax) or by keyword (q parameter, not explicitly in the JSON but can be inferred from context). The result of this call will give you the crucial eventId for each event, which is required for updating or deleting them.\n\n#### 2. Core Actions (Reading & Writing)\n\nOnce you have the necessary IDs, you can perform core actions.\n\n* create-event: Use this to add a new event to a calendar.\n    * Path: Requires calendarId. If the user just says \"my calendar,\" use \"primary\". Otherwise, you may need to call list-calendars first.\n    * Hint: For complex events with attendees or conference data, build the full JSON object. For simple requests like \"Schedule lunch with Bob tomorrow at noon,\" you only need to provide the required fields: calendarId, summary, start_datetime, and end_datetime.\n* update-event: Use this to modify an existing event.\n    * Path: Requires both calendarId and eventId. This almost always means you must call get-events first to find the specific eventId for the event the user wants to change (e.g., \"change my lunch meeting tomorrow to 1 PM\").\n* delete-event: Use this to remove an event.\n    * Path: Just like update-event, this requires calendarId and eventId. You must use get-events first to find the eventId.\n\n#### 3. Utility & Advanced Functions\n\nThese tools help with more complex queries and context-gathering.\n\n* check-availability: Use this to find free/busy times for one or more people.\n    * Path: This tool takes a list of calendar IDs in its items array. To check the availability of other people, you will first need their calendar IDs. Assume their calendar ID is their email address (e.g., bob@gmail.com). For the user themselves, use \"primary\".\n    * Example Plan: To \"find a time for me and Bob to meet tomorrow,\" first call check-availability with items: [{\"id\": \"primary\"}, {\"id\": \"bob@gmail.com\"}] for the relevant time range. Then, use the returned free slots to suggest a time and call create-event.\n* get-current-date & get-timezone-info: Use these at the beginning of any complex, time-sensitive query to ground your response in the correct temporal and geographical context.",
-            "startup": ["python3", "-m", "local-mcp-test.mcp-google-calendar.mcp_server_google_calendar"],
+            "io": "stdio",
+            "control_prompt": "You are an intelligent agent that has access to a user's services via a set of tools. Your goal is to help the user by translating their natural language requests into a precise, multi-step plan of tool calls.\\n\\n***\\n### ## Core Principles for Planning\\n\\n1.  **Reason from Purpose, Not Just Name.** Your primary goal is to fulfill the user's intent. Before choosing a tool, first identify the **purpose** of the data you need (e.g., `TEMPORAL_ANCHOR` for scheduling, `INTERACTION_LOG` for communication history). Then, find tools that return data types (`data_provided`) with that purpose.\\n2.  **Distinguish Between Resources and References.** Pay close attention to the `returns` field of each tool.\\n    * If a tool `returns: { \"items\": \"calendar_event\" }`, you will receive the full data object.\\n    * If a tool `returns: { \"items\": { \"is_reference_to\": \"calendar_event\" } }`, you will only receive an **ID** (a reference). You must then devise a plan to use another tool (like a `get-detail` function) to fetch the full resource using that ID.\\n3.  **Always Establish Context.** Before executing a plan, use utility tools like `get-current-date` and `get-timezone-info` to ground your understanding of the user's request in the correct time and place.\\n\\n***\\n### ## Your Planning Process\\n\\nFor every user query, you must follow this four-step process:\\n\\n1.  **Deconstruct the Goal:** What is the user's ultimate objective? (e.g., \"reschedule a meeting,\" \"find an email\").\\n2.  **Identify Required Data:** What specific pieces of information (and their `purpose` tags) do you need to fulfill the goal? Do you need a full resource or just a reference to start?\\n3.  **Formulate a Multi-Step Plan:** Create a sequence of tool calls. If you need an `eventId` to update an event, your first step must be to call a tool that can find a *reference* to that event.\\n4.  **Execute and Adapt:** Execute the first step of your plan. Based on the result, continue with your plan or adapt it if necessary. If the user's request is ambiguous or you cannot find a resource, inform the user and ask for clarification.\\n\\n***\\n### ## Example Thought Process\\n\\n**User Query:** \"Move my 'Product Review' meeting to this Friday at 4pm.\"\\n\\n**Your internal thought process should be:**\\n\\n1.  **Goal:** Update an existing calendar event.\\n2.  **Required Data:** The `update-event` tool requires an `eventId`. I do not have this. The `eventId` is contained within a `calendar_event` resource, which has a `TEMPORAL_ANCHOR` purpose.\\n3.  **Plan:**\\n    * First, I need to find a *reference* to the `calendar_event` to get its ID. I will use the `get-events` tool, which returns an array of `calendar_event` objects.\\n    * Before I search, I need to know the date for \"this Friday\". I will call `get-current-date`.\\n    * **Step 1:** Call `get-current-date`.\\n    * **Step 2:** Call `get-events` using a search query like \"Product Review\" and the date range for the current week to find the event and its `eventId`.\\n    * **Step 3:** Call `update-event` using the `eventId` from Step 2 and the new time (\"this Friday at 4pm\").\\n4.  **Execute:** Begin by calling `get-current-date`.\\n\\n---\\n### ## Specific Instructions\\n\\n* If a user refers to their own calendar as \"my calendar\" or \"my schedule\", you must use the special string `\"primary\"` for the `calendarId`.\\n* For all other calendars, you must first use `list-calendars` to find the correct `calendarId`.",
+            "startup": [
+                "python3",
+                "-m",
+                "local-mcp-test.mcp-google-calendar.mcp_server_google_calendar"
+            ],
             "cwd": "",
             "auth": true,
             "tools": [
@@ -38,23 +42,44 @@
                             "orderBy": {
                                 "type": "string",
                                 "description": "The order of the events returned",
-                                "enum": ["startTime", "updated"]
+                                "enum": [
+                                    "startTime",
+                                    "updated"
+                                ]
                             }
                         },
-                        "required": ["calendarId"]
+                        "required": [
+                            "calendarId"
+                        ]
+                    },
+                    "returns": {
+                        "type": "array",
+                        "items": "calendar-event"
                     }
                 },
                 {
                     "name": "list-calendars",
-                    "description": "List all calendars"
+                    "description": "List all calendars",
+                    "returns": {
+                        "type": "array",
+                        "items": "calendar"
+                    }
                 },
                 {
                     "name": "get-timezone-info",
-                    "description": "Get the current timezone information from Google Calendar"
+                    "description": "Get the current timezone information from Google Calendar",
+                    "returns": {
+                        "type": "object",
+                        "items": "timezone"
+                    }
                 },
                 {
                     "name": "get-current-date",
-                    "description": "Get the current date and time in the user's timezone. Useful for models that may have outdated knowledge of the current date."
+                    "description": "Get the current date and time in the user's timezone. Useful for models that may have outdated knowledge of the current date.",
+                    "returns": {
+                        "type": "object",
+                        "items": "date"
+                    }
                 },
                 {
                     "name": "check-availability",
@@ -94,6 +119,25 @@
                             "timeZone": {
                                 "type": "string",
                                 "description": "Time zone used in the response. Optional. The default is UTC."
+                            }
+                        }
+                    },
+                    "returns": {
+                        "type": "object",
+                        "properties": {
+                            "free_slots": {
+                                "type": "array",
+                                "items": {
+                                    "type": "object",
+                                    "properties": {
+                                        "start": {
+                                            "type": "string"
+                                        },
+                                        "end": {
+                                            "type": "string"
+                                        }
+                                    }
+                                }
                             }
                         }
                     }
@@ -166,7 +210,12 @@
                                         "responseStatus": {
                                             "type": "string",
                                             "description": "The attendee's response status",
-                                            "enum": ["needsAction", "declined", "tentative", "accepted"],
+                                            "enum": [
+                                                "needsAction",
+                                                "declined",
+                                                "tentative",
+                                                "accepted"
+                                            ],
                                             "default": "needsAction"
                                         },
                                         "comment": {
@@ -180,7 +229,9 @@
                                             "default": 0
                                         }
                                     },
-                                    "required": ["email"]
+                                    "required": [
+                                        "email"
+                                    ]
                                 }
                             },
                             "attachments": {
@@ -206,7 +257,9 @@
                                             "description": "MIME type of the attachment"
                                         }
                                     },
-                                    "required": ["fileId"]
+                                    "required": [
+                                        "fileId"
+                                    ]
                                 },
                                 "maxItems": 25
                             },
@@ -228,14 +281,20 @@
                                                 "method": {
                                                     "type": "string",
                                                     "description": "The method used by this reminder",
-                                                    "enum": ["email", "popup"]
+                                                    "enum": [
+                                                        "email",
+                                                        "popup"
+                                                    ]
                                                 },
                                                 "minutes": {
                                                     "type": "integer",
                                                     "description": "Number of minutes before the event to trigger the reminder"
                                                 }
                                             },
-                                            "required": ["method", "minutes"]
+                                            "required": [
+                                                "method",
+                                                "minutes"
+                                            ]
                                         }
                                     }
                                 }
@@ -243,13 +302,21 @@
                             "visibility": {
                                 "type": "string",
                                 "description": "Visibility of the event",
-                                "enum": ["default", "public", "private", "confidential"],
+                                "enum": [
+                                    "default",
+                                    "public",
+                                    "private",
+                                    "confidential"
+                                ],
                                 "default": "default"
                             },
                             "transparency": {
                                 "type": "string",
                                 "description": "Whether the event blocks time on the calendar",
-                                "enum": ["opaque", "transparent"],
+                                "enum": [
+                                    "opaque",
+                                    "transparent"
+                                ],
                                 "default": "opaque"
                             },
                             "conferenceData": {
@@ -272,15 +339,28 @@
                                                         "description": "Conference solution type (e.g., 'hangoutsMeet')"
                                                     }
                                                 },
-                                                "required": ["type"]
+                                                "required": [
+                                                    "type"
+                                                ]
                                             }
                                         },
-                                        "required": ["requestId"]
+                                        "required": [
+                                            "requestId"
+                                        ]
                                     }
                                 }
                             }
                         },
-                        "required": ["calendarId", "summary", "start_datetime", "end_datetime"]
+                        "required": [
+                            "calendarId",
+                            "summary",
+                            "start_datetime",
+                            "end_datetime"
+                        ]
+                    },
+                    "returns": {
+                        "type": "object",
+                        "items": "calendar-event"
                     }
                 },
                 {
@@ -300,11 +380,30 @@
                             "sendUpdates": {
                                 "type": "string",
                                 "description": "Whether to send notifications about the deletion to all attendees",
-                                "enum": ["all", "externalOnly", "none"],
+                                "enum": [
+                                    "all",
+                                    "externalOnly",
+                                    "none"
+                                ],
                                 "default": "all"
                             }
                         },
-                        "required": ["calendarId", "eventId"]
+                        "required": [
+                            "calendarId",
+                            "eventId"
+                        ]
+                    },
+                    "returns": {
+                        "type": "object",
+                        "properties": {
+                            "status": {
+                                "type": "string",
+                                "enum": [
+                                    "success",
+                                    "failure"
+                                ]
+                            }
+                        }
                     }
                 },
                 {
@@ -371,11 +470,18 @@
                                         "responseStatus": {
                                             "type": "string",
                                             "description": "The attendee's response status",
-                                            "enum": ["needsAction", "declined", "tentative", "accepted"],
+                                            "enum": [
+                                                "needsAction",
+                                                "declined",
+                                                "tentative",
+                                                "accepted"
+                                            ],
                                             "default": "needsAction"
                                         }
                                     },
-                                    "required": ["email"]
+                                    "required": [
+                                        "email"
+                                    ]
                                 }
                             },
                             "recurrence": {
@@ -404,14 +510,20 @@
                                                 "method": {
                                                     "type": "string",
                                                     "description": "The method used by this reminder",
-                                                    "enum": ["email", "popup"]
+                                                    "enum": [
+                                                        "email",
+                                                        "popup"
+                                                    ]
                                                 },
                                                 "minutes": {
                                                     "type": "integer",
                                                     "description": "Number of minutes before the event to trigger the reminder"
                                                 }
                                             },
-                                            "required": ["method", "minutes"]
+                                            "required": [
+                                                "method",
+                                                "minutes"
+                                            ]
                                         }
                                     }
                                 }
@@ -419,32 +531,90 @@
                             "visibility": {
                                 "type": "string",
                                 "description": "Visibility of the event",
-                                "enum": ["default", "public", "private", "confidential"],
+                                "enum": [
+                                    "default",
+                                    "public",
+                                    "private",
+                                    "confidential"
+                                ],
                                 "default": "default"
                             },
                             "transparency": {
                                 "type": "string",
                                 "description": "Whether the event blocks time on the calendar",
-                                "enum": ["opaque", "transparent"],
+                                "enum": [
+                                    "opaque",
+                                    "transparent"
+                                ],
                                 "default": "opaque"
                             },
                             "sendUpdates": {
                                 "type": "string",
                                 "description": "Whether to send notifications about the update to all attendees",
-                                "enum": ["all", "externalOnly", "none"],
-                                    "default": "all"
-                                }
-                            },
-                        
-                        "required": ["calendarId", "eventId"]
+                                "enum": [
+                                    "all",
+                                    "externalOnly",
+                                    "none"
+                                ],
+                                "default": "all"
+                            }
+                        },
+                        "required": [
+                            "calendarId",
+                            "eventId"
+                        ]
+                    },
+                    "returns": {
+                        "type": "object",
+                        "items": "calendar-event"
                     }
+                }
+            ],
+            "data": [
+                {
+                    "name": "calendar-event",
+                    "description": "A single event, appointment, or meeting in a calendar",
+                    "purpose": [
+                        "TEMPORAL_ANCHOR, STATE_RECORD"
+                    ]
+                },
+                {
+                    "name": "calendar",
+                    "description": "A calendar, or a collection of events, appointments, or meetings",
+                    "purpose": [
+                        "STATE_RECORD",
+                        "KNOWLEDGE_BASE_ENTRY",
+                        "STRUCTURAL_CONTAINER"
+                    ]
+                },
+                {
+                    "name": "timezone",
+                    "description": "A timezone, or a collection of timezones",
+                    "purpose": [
+                        "STATE_RECORD"
+                    ]
+                },
+                {
+                    "name": "date",
+                    "description": "A date, or a collection of dates",
+                    "purpose": [
+                        "STATE_RECORD"
+                    ]
                 }
             ]
         },
         "google-gmail": {
-            "io": "stdio", 
-            "control_prompt": "You are an intelligent agent that has access to a user's Gmail account. Your primary goal is to help the user manage their emails efficiently by translating their natural language requests into one or more tool calls. Think step-by-step and devise a plan before acting.\n\n## ## Core Principle: Resource IDs\n\nMany tools require an email_id, label_id, filter_id, or folder_id. The user will almost never know these IDs. Your first step in any complex operation is to find the necessary ID. Once you have this ID, you are free to call one or more of the following tools to extract the resource's content.`\n\n* To find an email_id: Use get-unread-emails to see recent emails, or use search-emails with a user-provided query (e.g., from sender, subject) to find a specific email.\n* To find a label_id: Use list-labels to get a list of all available labels and their corresponding IDs.\n* To find a folder_id: Use list-folders. (Note: Gmail uses labels for most folder-like functionality).\n* To find a filter_id: Use list-filters.\n\n## ## Common Workflows\n\n* \"Read my latest email from Bob\":\n    1.  Call search-emails with the query from:bob@example.com.\n    2.  Extract the email_id from the search results.\n    3.  Call read-email with that email_id.\n\n* \"Apply the 'Urgent' label to the email about the project launch\":\n    1.  Call list-labels to find the label_id for the \"Urgent\" label.\n    2.  Call search-emails with the query \"project launch\" to find the email_id.\n    3.  Call apply-label with both the email_id and label_id.\n\n* \"Send a thank you note to Jane\":\n    1.  Call send-email with the recipient's email, a subject, and the message body you generate.\n\n* \"Delete all emails from 'spam-sender@example.com'\":\n    1.  Call search-emails with the query from:spam-sender@example.com to get a list of emails and their email_ids.\n    2.  For each email_id in the results, call trash-email.\n\nAlways confirm the action with the user if it is destructive (e.g., deleting multiple emails).",
-            "startup": ["python3", "-m", "gmail-mcp.src.gmail.server", "--creds-file-path", "credentials-web.json", "--token-path", "gmail-mcp/token.json"],
+            "io": "stdio",
+            "control_prompt": "You are an intelligent agent with access to a user's Gmail account. Your goal is to help the user manage their emails by creating a multi-step plan of tool calls based on their natural language requests.\\n\\n***\\n### ## Core Principles for Planning\\n\\n1.  **Reason from Data Purpose:** First, identify the **purpose** of the data you need (e.g., `INTERACTION_LOG` to read conversations, `STRUCTURAL_CONTAINER` to find a label). Then, find tools that `return` data types (`data_provided`) with that purpose.\\n2.  **Distinguish Resources from References:** Pay close attention to the `returns` field. If a tool `returns: { \"items\": { \"is_reference_to\": \"email_message\" } }`, it means you only get an **ID**. Your next step must be to call a different tool (like `read-email`) to get the full resource details using that ID.\\n\\n***\\n### ## Your Planning Process\\n\\nFor every query, you must create and follow a plan:\\n\\n1.  **Deconstruct the Goal:** What is the user's objective? (e.g., \"find and label an email\").\\n2.  **Identify Required Data:** What information and `purpose` tags do you need? Do you need a full resource or just a reference to start?\\n3.  **Formulate a Multi-Step Plan:** If you need a `label_id` and an `email_id` to apply a label, your plan must include steps to get both of those IDs first.\\n4.  **Execute and Adapt:** Execute the plan step-by-step. If you can't find a resource, inform the user.\\n\\n***\\n### ## Example Thought Process\\n\\n**User Query:** \"Find the latest email from 'billing@example.com' and apply the 'Receipts' label to it.\"\\n\\n**Your internal thought process should be:**\\n\\n1.  **Goal:** Apply a label to an email.\\n2.  **Required Data:** The `apply-label` tool requires a `label_id` and an `email_id`. I have neither.\\n3.  **Plan:**\\n    * **Step 1:** Find the `label_id`. I will call the `list-labels` tool, which returns full `gmail_label` objects, to find the ID for the label named 'Receipts'.\\n    * **Step 2:** Find the `email_id`. I will call the `search-emails` tool with the query `from:billing@example.com`. This tool returns a *reference* to an `email_message`. I can extract the `email_id` from this reference.\\n    * **Step 3:** Call `apply-label` using the `label_id` from Step 1 and the `email_id` from Step 2.\\n4.  **Execute:** Begin by calling `list-labels`.",
+            "startup": [
+                "python3",
+                "-m",
+                "gmail-mcp.src.gmail.server",
+                "--creds-file-path",
+                "credentials-web.json",
+                "--token-path",
+                "gmail-mcp/token.json"
+            ],
             "cwd": "",
             "auth": true,
             "tools": [
@@ -467,12 +637,26 @@
                                 "description": "The body of the email"
                             }
                         },
-                        "required": ["recipient_id", "subject", "message"]
+                        "required": [
+                            "recipient_id",
+                            "subject",
+                            "message"
+                        ]
+                    },
+                    "returns": {
+                        "type": "object",
+                        "items": "email_message"
                     }
                 },
                 {
                     "name": "get-unread-emails",
-                    "description": "Get all unread emails in the user's inbox"
+                    "description": "Get all unread emails in the user's inbox",
+                    "returns": {
+                        "type": "array",
+                        "items": {
+                            "is_reference_to": "email_message"
+                        }
+                    }
                 },
                 {
                     "name": "read-email",
@@ -485,7 +669,13 @@
                                 "description": "The ID of the email to read"
                             }
                         },
-                        "required": ["email_id"]
+                        "required": [
+                            "email_id"
+                        ]
+                    },
+                    "returns": {
+                        "type": "object",
+                        "items": "email_message"
                     }
                 },
                 {
@@ -499,7 +689,17 @@
                                 "description": "The ID of the email to open in the browser"
                             }
                         },
-                        "required": ["email_id"]
+                        "required": [
+                            "email_id"
+                        ]
+                    },
+                    "returns": {
+                        "type": "object",
+                        "properties": {
+                            "status": {
+                                "type": "string"
+                            }
+                        }
                     }
                 },
                 {
@@ -513,7 +713,21 @@
                                 "description": "The ID of the email to trash"
                             }
                         },
-                        "required": ["email_id"]
+                        "required": [
+                            "email_id"
+                        ]
+                    },
+                    "returns": {
+                        "type": "object",
+                        "properties": {
+                            "status": {
+                                "type": "string",
+                                "enum": [
+                                    "success",
+                                    "failure"
+                                ]
+                            }
+                        }
                     }
                 },
                 {
@@ -527,7 +741,21 @@
                                 "description": "The ID of the email to mark as read"
                             }
                         },
-                        "required": ["email_id"]
+                        "required": [
+                            "email_id"
+                        ]
+                    },
+                    "returns": {
+                        "type": "object",
+                        "properties": {
+                            "status": {
+                                "type": "string",
+                                "enum": [
+                                    "success",
+                                    "failure"
+                                ]
+                            }
+                        }
                     }
                 },
                 {
@@ -549,16 +777,34 @@
                                 "description": "The body of the email"
                             }
                         },
-                        "required": ["recipient_id", "subject", "message"]
+                        "required": [
+                            "recipient_id",
+                            "subject",
+                            "message"
+                        ]
+                    },
+                    "returns": {
+                        "type": "object",
+                        "items": "draft_message"
                     }
                 },
                 {
                     "name": "list-drafts",
-                    "description": "List all drafts in the user's draft folder"
+                    "description": "List all drafts in the user's draft folder",
+                    "returns": {
+                        "type": "array",
+                        "items": {
+                            "is_reference_to": "draft_message"
+                        }
+                    }
                 },
-                {   
+                {
                     "name": "list-labels",
-                    "description": "List all labels in the user's inbox"
+                    "description": "List all labels in the user's inbox",
+                    "returns": {
+                        "type": "array",
+                        "items": "gmail_label"
+                    }
                 },
                 {
                     "name": "create-label",
@@ -571,7 +817,13 @@
                                 "description": "The name of the label to create"
                             }
                         },
-                        "required": ["name"]
+                        "required": [
+                            "name"
+                        ]
+                    },
+                    "returns": {
+                        "type": "object",
+                        "items": "gmail_label"
                     }
                 },
                 {
@@ -589,7 +841,22 @@
                                 "description": "The ID of the label to apply"
                             }
                         },
-                        "required": ["email_id", "label_id"]
+                        "required": [
+                            "email_id",
+                            "label_id"
+                        ]
+                    },
+                    "returns": {
+                        "type": "object",
+                        "properties": {
+                            "status": {
+                                "type": "string",
+                                "enum": [
+                                    "success",
+                                    "failure"
+                                ]
+                            }
+                        }
                     }
                 },
                 {
@@ -607,7 +874,22 @@
                                 "description": "The ID of the label to remove"
                             }
                         },
-                        "required": ["email_id", "label_id"]
+                        "required": [
+                            "email_id",
+                            "label_id"
+                        ]
+                    },
+                    "returns": {
+                        "type": "object",
+                        "properties": {
+                            "status": {
+                                "type": "string",
+                                "enum": [
+                                    "success",
+                                    "failure"
+                                ]
+                            }
+                        }
                     }
                 },
                 {
@@ -621,12 +903,24 @@
                                 "description": "The ID of the label to search by"
                             }
                         },
-                        "required": ["label_id"]
+                        "required": [
+                            "label_id"
+                        ]
+                    },
+                    "returns": {
+                        "type": "array",
+                        "items": {
+                            "is_reference_to": "email_message"
+                        }
                     }
                 },
                 {
                     "name": "list-filters",
-                    "description": "List all filters in the user's inbox"
+                    "description": "List all filters in the user's inbox",
+                    "returns": {
+                        "type": "array",
+                        "items": "gmail_filter"
+                    }
                 },
                 {
                     "name": "get-filter",
@@ -639,7 +933,13 @@
                                 "description": "The ID of the filter to get"
                             }
                         },
-                        "required": ["filter_id"]
+                        "required": [
+                            "filter_id"
+                        ]
+                    },
+                    "returns": {
+                        "type": "object",
+                        "items": "gmail_filter"
                     }
                 },
                 {
@@ -695,18 +995,66 @@
                         }
                     },
                     "anyOf": [
-                        { "required": ["from_email"] },
-                        { "required": ["to_email"] },
-                        { "required": ["subject"] },
-                        { "required": ["query"] },
-                        { "required": ["has_attachment"] },
-                        { "required": ["exclude_chats"] },
-                        { "required": ["size_comparison"] },
-                        { "required": ["size"] },
-                        { "required": ["add_label_ids"] },
-                        { "required": ["remove_label_ids"] },
-                        { "required": ["forward_to"] }
-                    ]
+                        {
+                            "required": [
+                                "from_email"
+                            ]
+                        },
+                        {
+                            "required": [
+                                "to_email"
+                            ]
+                        },
+                        {
+                            "required": [
+                                "subject"
+                            ]
+                        },
+                        {
+                            "required": [
+                                "query"
+                            ]
+                        },
+                        {
+                            "required": [
+                                "has_attachment"
+                            ]
+                        },
+                        {
+                            "required": [
+                                "exclude_chats"
+                            ]
+                        },
+                        {
+                            "required": [
+                                "size_comparison"
+                            ]
+                        },
+                        {
+                            "required": [
+                                "size"
+                            ]
+                        },
+                        {
+                            "required": [
+                                "add_label_ids"
+                            ]
+                        },
+                        {
+                            "required": [
+                                "remove_label_ids"
+                            ]
+                        },
+                        {
+                            "required": [
+                                "forward_to"
+                            ]
+                        }
+                    ],
+                    "returns": {
+                        "type": "object",
+                        "items": "gmail_filter"
+                    }
                 },
                 {
                     "name": "delete-filter",
@@ -719,7 +1067,21 @@
                                 "description": "The ID of the filter to delete"
                             }
                         },
-                        "required": ["filter_id"]
+                        "required": [
+                            "filter_id"
+                        ]
+                    },
+                    "returns": {
+                        "type": "object",
+                        "properties": {
+                            "status": {
+                                "type": "string",
+                                "enum": [
+                                    "success",
+                                    "failure"
+                                ]
+                            }
+                        }
                     }
                 },
                 {
@@ -738,7 +1100,15 @@
                                 "default": 50
                             }
                         },
-                        "required": ["query"]
+                        "required": [
+                            "query"
+                        ]
+                    },
+                    "returns": {
+                        "type": "array",
+                        "items": {
+                            "is_reference_to": "email_message"
+                        }
                     }
                 },
                 {
@@ -752,7 +1122,13 @@
                                 "description": "The name of the folder to create"
                             }
                         },
-                        "required": ["name"]
+                        "required": [
+                            "name"
+                        ]
+                    },
+                    "returns": {
+                        "type": "object",
+                        "items": "gmail_folder"
                     }
                 },
                 {
@@ -770,12 +1146,31 @@
                                 "description": "The ID of the folder to move the email to"
                             }
                         },
-                        "required": ["email_id", "folder_id"]
+                        "required": [
+                            "email_id",
+                            "folder_id"
+                        ]
+                    },
+                    "returns": {
+                        "type": "object",
+                        "properties": {
+                            "status": {
+                                "type": "string",
+                                "enum": [
+                                    "success",
+                                    "failure"
+                                ]
+                            }
+                        }
                     }
                 },
                 {
                     "name": "list-folders",
-                    "description": "List all folders in the user's inbox"
+                    "description": "List all folders in the user's inbox",
+                    "returns": {
+                        "type": "array",
+                        "items": "gmail_folder"
+                    }
                 },
                 {
                     "name": "rename-label",
@@ -792,7 +1187,14 @@
                                 "description": "The new name of the label"
                             }
                         },
-                        "required": ["label_id", "new_name"]
+                        "required": [
+                            "label_id",
+                            "new_name"
+                        ]
+                    },
+                    "returns": {
+                        "type": "object",
+                        "items": "gmail_label"
                     }
                 },
                 {
@@ -806,7 +1208,21 @@
                                 "description": "The ID of the label to delete"
                             }
                         },
-                        "required": ["label_id"]
+                        "required": [
+                            "label_id"
+                        ]
+                    },
+                    "returns": {
+                        "type": "object",
+                        "properties": {
+                            "status": {
+                                "type": "string",
+                                "enum": [
+                                    "success",
+                                    "failure"
+                                ]
+                            }
+                        }
                     }
                 },
                 {
@@ -820,7 +1236,21 @@
                                 "description": "The ID of the email to archive"
                             }
                         },
-                        "required": ["email_id"]
+                        "required": [
+                            "email_id"
+                        ]
+                    },
+                    "returns": {
+                        "type": "object",
+                        "properties": {
+                            "status": {
+                                "type": "string",
+                                "enum": [
+                                    "success",
+                                    "failure"
+                                ]
+                            }
+                        }
                     }
                 },
                 {
@@ -839,7 +1269,20 @@
                                 "default": 100
                             }
                         },
-                        "required": ["query"]
+                        "required": [
+                            "query"
+                        ]
+                    },
+                    "returns": {
+                        "type": "object",
+                        "properties": {
+                            "status": {
+                                "type": "string"
+                            },
+                            "archived_count": {
+                                "type": "integer"
+                            }
+                        }
                     }
                 },
                 {
@@ -854,7 +1297,15 @@
                                 "default": 50
                             }
                         },
-                        "required": ["max_results"]
+                        "required": [
+                            "max_results"
+                        ]
+                    },
+                    "returns": {
+                        "type": "array",
+                        "items": {
+                            "is_reference_to": "email_message"
+                        }
                     }
                 },
                 {
@@ -868,8 +1319,62 @@
                                 "description": "The ID of the email to restore"
                             }
                         },
-                        "required": ["email_id"]
+                        "required": [
+                            "email_id"
+                        ]
+                    },
+                    "returns": {
+                        "type": "object",
+                        "properties": {
+                            "status": {
+                                "type": "string",
+                                "enum": [
+                                    "success",
+                                    "failure"
+                                ]
+                            }
+                        }
                     }
+                }
+            ],
+            "data": [
+                {
+                    "name": "email_message",
+                    "description": "A single, unique email message in the user's account, containing content, sender, recipients, and metadata.",
+                    "purpose": [
+                        "INTERACTION_LOG",
+                        "STATE_RECORD",
+                        "ACTIONABLE_INTENT"
+                    ]
+                },
+                {
+                    "name": "draft_message",
+                    "description": "An unsent email message saved in the user's drafts.",
+                    "purpose": [
+                        "ACTIONABLE_INTENT",
+                        "KNOWLEDGE_BASE_ENTRY"
+                    ]
+                },
+                {
+                    "name": "gmail_label",
+                    "description": "A tag used to organize and categorize email messages.",
+                    "purpose": [
+                        "STRUCTURAL_CONTAINER"
+                    ]
+                },
+                {
+                    "name": "gmail_folder",
+                    "description": "A container for organizing emails, which is functionally equivalent to a label in Gmail.",
+                    "purpose": [
+                        "STRUCTURAL_CONTAINER"
+                    ]
+                },
+                {
+                    "name": "gmail_filter",
+                    "description": "An automated rule that applies actions to incoming emails based on user-defined criteria.",
+                    "purpose": [
+                        "KNOWLEDGE_BASE_ENTRY"
+                    ]
                 }
             ]
         }
