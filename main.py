@@ -57,9 +57,6 @@ class AegisEngine:
         self.tool_config = types.GenerateContentConfig(tools=self.tools)
         self.google_client = genai.Client(vertexai=True, project=os.environ["GOOGLE_CLOUD_PROJECT"], location=os.environ["GOOGLE_CLOUD_LOCATION"])
 
-        
-    def get_events(self, calendar_id, max_results):
-        return self.client.send_request("google-calendar", "getEvents", {"calendarId": calendar_id, "maxResults": max_results})
 
     def take_query(self, query):
         print(query)

@@ -50,7 +50,9 @@ def authorize(token_path: str, credentials_path: str) -> Credentials:
     """Authorize and return Google Calendar API credentials."""
     import sys
     print("Starting Google Calendar authentication...", file=sys.stderr)
-    
+
+    print(f"Token path: {token_path}", file=sys.stderr)
+    print(f"Credentials path: {credentials_path}", file=sys.stderr)
     
     creds = load_saved_credentials()
     
