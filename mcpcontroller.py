@@ -4,6 +4,7 @@ from client import MCPClient
 from google.genai.types import FunctionDeclaration, Tool, Schema, Part, GenerateContentConfig
 import time
 from llmcaller import LLMCaller
+import json
 
 class MCPController:
     """Responsible for one MCPClient. Contains the prompt of how to use the MCP service.
@@ -53,8 +54,9 @@ class MCPController:
                 conversation_history=conversation_history,
             )
 
-            print(f"Tokens used: {response.total_token_count}")
-            
+            #print(response)
+            print(f"Tokens used: {response.usage_metadata.total_token_count}")
+
             candidate = response.candidates[0]
 
             # Check if the model's response contains any function calls
@@ -88,10 +90,16 @@ class MCPController:
                     # Look up the function in our "toolbox" and call it
                     function_to_call = self.available_tools[function_name]
                     tool_result = function_to_call(function_name, function_call.args)
+
+                    if "result" in tool_result:
+                        
+                        sliced_tool_result = json.dumps(tool_result["result"]["content"])[:2000]
+                    else:
+                        sliced_tool_result = tool_result
                     # Append the result to our list of responses
                     function_responses.append(Part.from_function_response(
                         name=function_name,
-                        response={"result": tool_result}
+                        response={"result": sliced_tool_result}
                     ))
                 else:
                     print(f"Error: Function '{function_name}' not found.")
