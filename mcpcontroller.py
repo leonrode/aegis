@@ -24,8 +24,6 @@ class MCPController:
         self.available_tools = {}
         self._load_config_into_functions()
 
-        print(f"Available tools: {self.available_tools}")
-
         self.tool_config = GenerateContentConfig(tools=self.tools)
 
         self.llm_caller = LLMCaller(tools_config=self.tool_config)
@@ -90,22 +88,15 @@ class MCPController:
 
         text = result.candidates[0].content.parts[0].text
 
-
         if "```json" in text:
             text = text.split("```json")[1].split("```")[0]
 
-
-
         text = json.loads(text)
-
-        # print(text)
 
         data = []
 
         for tool in text:
-            print(f"Calling tool: {tool['tool_name']} with params: {tool['params']}")
             response = self.available_tools[tool["tool_name"]](tool["tool_name"], tool["params"])
-            print(f"Response: {response}")
             obj = response["result"]
 
             if response["result"]:
@@ -138,7 +129,6 @@ class MCPController:
                 conversation_history=conversation_history,
             )
 
-            #print(response)
             print(f"Tokens used: {response.usage_metadata.total_token_count}")
 
             candidate = response.candidates[0]
@@ -190,8 +180,5 @@ class MCPController:
                 else:
                     print(f"Error: Function '{function_name}' not found.")
             
-            # Append the tool execution results to the conversation history
-            print("Function responses: ", function_responses)
             conversation_history.extend(function_responses)
-            # The loop will now continue, sending the tool results back to Gemini
             time.sleep(2)
