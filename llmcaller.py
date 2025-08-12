@@ -13,7 +13,7 @@ class LLMCaller:
     def init_llm_client(self):
         self.llm_client = genai.Client(vertexai=True, project=os.environ["GOOGLE_CLOUD_PROJECT"], location=os.environ["GOOGLE_CLOUD_LOCATION"])
 
-    def call_llm(self, prompt, conversation_history=None, config=None):
+    def call_llm(self, prompt, conversation_history=None):
         if conversation_history:
             response = self.llm_client.models.generate_content(
                 model="gemini-2.0-flash-lite-001",

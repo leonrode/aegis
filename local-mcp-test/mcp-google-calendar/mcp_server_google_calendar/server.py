@@ -143,7 +143,8 @@ async def handle_call_tool(
                 calendarId=request_data.calendarId,
                 timeMin=request_data.timeMin,
                 timeMax=request_data.timeMax,
-                maxResults=request_data.maxResults,
+                #maxResults=request_data.maxResults,
+                maxResults=5,
                 singleEvents=request_data.singleEvents,
                 orderBy=request_data.orderBy,
             ).execute()

@@ -69,7 +69,7 @@ def get_email_message_details(service, msg_id):
             'subject': subject,
             'sender': sender,
             'recipients': recipients,
-            'body': body,
+            'body': "",
             'snippet': snippet,
             'has_attachments': has_attachments,
             'date': date,

@@ -61,30 +61,36 @@ class MCPController:
 
         Below is a complete list of all tools available from {self.server_name}.
 
+        Use all tools that start with get- or list- or search-
+
+        If relevant, use 'primary' for an ID or 'leon.rode13@gmail.com' for an email address.
+        If relevant, start any time range with the current date minus 1 month.
+
         **Available Tools:**
-        {self.server_config["tools"]}
+        {json.dumps(self.server_config["tools"], indent=4)}
 
         **Your Task:**
-        Based ONLY on the tools provided, generate a JSON array of ALL of the essential, non-destructive, read-only tool calls that should be run to get a complete overview of the user's recent activity. Focus on "list", "get", or "search" functions. Do NOT include any tools that create, update, or delete data.
+        Based ONLY on the tools provided, generate a JSON array of ALL of the essential, non-destructive, read-only tool calls that should be run to get a complete overview of the user's recent activity.
 
-        Remembe the principles of the MCP service. If a tool returns a reference, you NEED to use the tool that retrieves the resource by ID, and add that tool to the list.
+        Remember the principles of the MCP service. If a tool returns a reference, you NEED to use the tool that retrieves the resource by ID, and add that tool to the list.
 
-        **Example Output:**
+        **Output Format**
+
         [
-        {{
-            "tool_name": "get-events",
-            "params": {{ "maxResults": 10 }}
-        }},
-        {{
-            "tool_name": "list-calendars",
-            "params": {{}}
-        }}
+            {{
+                "tool_name": "name of the tool",
+                "params": {{ "params for the tool" }}
+            }}
+            ...
         ]
+
         """
 
         result = self.llm_caller.call_llm(query)
 
         text = result.candidates[0].content.parts[0].text
+
+
         if "```json" in text:
             text = text.split("```json")[1].split("```")[0]
 
@@ -110,8 +116,9 @@ class MCPController:
                     if obj["type"] == "text":
                         obj = json.loads(obj["text"])
             
+            if tool["tool_name"] == "get-events":
+                return obj
 
-            # clean up the obj
 
             data.append(obj)
 
@@ -144,7 +151,6 @@ class MCPController:
                 print("\n--- Final Answer from Gemini ---")
                 print(response.text)
                 return conversation_history
-                # return response.text.strip()
 
             answered_once = True
 
@@ -173,7 +179,7 @@ class MCPController:
 
                     if "result" in tool_result:
                         
-                        sliced_tool_result = json.dumps(tool_result["result"]["content"])[:2000]
+                        sliced_tool_result = json.dumps(tool_result["result"]["content"])
                     else:
                         sliced_tool_result = tool_result
                     # Append the result to our list of responses

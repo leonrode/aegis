@@ -53,7 +53,6 @@ class Sorter:
         """
 
         response = self.llm_caller.call_llm(prompt)
-        print(response.text)
 
         service_name = response.text.strip()
         if service_name in self.mcp_controllers:

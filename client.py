@@ -7,7 +7,6 @@ import subprocess
 import threading
 import time
 import os
-from google.genai.types import FunctionDeclaration, Tool, Schema
 
 class MCPClient:
     def __init__(self, server_name, server_config):
