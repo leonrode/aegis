@@ -34,6 +34,12 @@ The user has the following calendar events:
 *   **Flight to New York**: A private flight with the location listed as X.
 ```
 
+## Architecture
+
+The image below lays out a high level view of how the parts of this project interact and depend on one another. They correspond to the objects in this repository.
+
+![Architectural image](public/image.png)
+
 ## Usage
 
 Dependencies are best installed in a virtual environment. Once the virtual environment is created, install the dependencies with `pip install -r requirements.txt`
