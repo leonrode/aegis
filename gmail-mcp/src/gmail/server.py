@@ -297,7 +297,22 @@ class GmailService:
                 response = self.service.users().messages().list(userId=user_id, q=query,
                                                     pageToken=page_token).execute()
                 messages.extend(response['messages'])
-            return messages
+
+
+            return messages[:10]
+
+            contents = []
+            print(f"Messages: {messages}")
+            for message in messages[:10]:
+                print(f"Message: {message}", file=sys.stderr)
+                content = await self.read_email(message["id"])
+                print(f"Content: {content}", file=sys.stderr)
+                contents.append({
+                    "id": message["id"],
+                    "content": content["content"]
+                })
+            
+            return contents
 
         except HttpError as error:
             return f"An HttpError occurred: {str(error)}"

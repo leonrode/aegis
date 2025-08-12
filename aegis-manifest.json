@@ -4,6 +4,7 @@
     "servers": {
         "google-calendar": {
             "io": "stdio",
+            "pull_prompt": "You are an intelligent calendar assistant that has access to a user's calendar services via a set of tools. Your goal is to retrieve the latest data out of their Google Calendar account. You will do this by first using the get-timezone-info tool, which returns you the user's timezone. Then you will use the get-events tool, passing 'primary' as the calendarId, and 10 for maxResults.",
             "control_prompt": "You are an intelligent agent that has access to a user's services via a set of tools. Your goal is to help the user by translating their natural language requests into a precise, multi-step plan of tool calls.\\n\\n***\\n### ## Core Principles for Planning\\n\\n1.  **Reason from Purpose, Not Just Name.** Your primary goal is to fulfill the user's intent. Before choosing a tool, first identify the **purpose** of the data you need (e.g., `TEMPORAL_ANCHOR` for scheduling, `INTERACTION_LOG` for communication history). Then, find tools that return data types (`data_provided`) with that purpose.\\n2.  **Distinguish Between Resources and References.** Pay close attention to the `returns` field of each tool.\\n    * If a tool `returns: { \"items\": \"calendar_event\" }`, you will receive the full data object.\\n    * If a tool `returns: { \"items\": { \"is_reference_to\": \"calendar_event\" } }`, you will only receive an **ID** (a reference). You must then devise a plan to use another tool (like a `get-detail` function) to fetch the full resource using that ID.\\n3.  **Always Establish Context.** Before executing a plan, use utility tools like `get-current-date` and `get-timezone-info` to ground your understanding of the user's request in the correct time and place.\\n\\n***\\n### ## Your Planning Process\\n\\nFor every user query, you must follow this four-step process:\\n\\n1.  **Deconstruct the Goal:** What is the user's ultimate objective? (e.g., \"reschedule a meeting,\" \"find an email\").\\n2.  **Identify Required Data:** What specific pieces of information (and their `purpose` tags) do you need to fulfill the goal? Do you need a full resource or just a reference to start?\\n3.  **Formulate a Multi-Step Plan:** Create a sequence of tool calls. If you need an `eventId` to update an event, your first step must be to call a tool that can find a *reference* to that event.\\n4.  **Execute and Adapt:** Execute the first step of your plan. Based on the result, continue with your plan or adapt it if necessary. If the user's request is ambiguous or you cannot find a resource, inform the user and ask for clarification.\\n\\n***\\n### ## Example Thought Process\\n\\n**User Query:** \"Move my 'Product Review' meeting to this Friday at 4pm.\"\\n\\n**Your internal thought process should be:**\\n\\n1.  **Goal:** Update an existing calendar event.\\n2.  **Required Data:** The `update-event` tool requires an `eventId`. I do not have this. The `eventId` is contained within a `calendar_event` resource, which has a `TEMPORAL_ANCHOR` purpose.\\n3.  **Plan:**\\n    * First, I need to find a *reference* to the `calendar_event` to get its ID. I will use the `get-events` tool, which returns an array of `calendar_event` objects.\\n    * Before I search, I need to know the date for \"this Friday\". I will call `get-current-date`.\\n    * **Step 1:** Call `get-current-date`.\\n    * **Step 2:** Call `get-events` using a search query like \"Product Review\" and the date range for the current week to find the event and its `eventId`.\\n    * **Step 3:** Call `update-event` using the `eventId` from Step 2 and the new time (\"this Friday at 4pm\").\\n4.  **Execute:** Begin by calling `get-current-date`.\\n\\n---\\n### ## Specific Instructions\\n\\n* If a user refers to their own calendar as \"my calendar\" or \"my schedule\", you must use the special string `\"primary\"` for the `calendarId`.\\n* For all other calendars, you must first use `list-calendars` to find the correct `calendarId`.",
             "startup": [
                 "python3",
@@ -54,7 +55,7 @@
                     },
                     "returns": {
                         "type": "array",
-                        "items": "calendar-event"
+                        "items": "calendar_event"
                     }
                 },
                 {
@@ -360,7 +361,7 @@
                     },
                     "returns": {
                         "type": "object",
-                        "items": "calendar-event"
+                        "items": "calendar_event"
                     }
                 },
                 {
@@ -566,13 +567,13 @@
                     },
                     "returns": {
                         "type": "object",
-                        "items": "calendar-event"
+                        "items": "calendar_event"
                     }
                 }
             ],
             "data": [
                 {
-                    "name": "calendar-event",
+                    "name": "calendar_event",
                     "description": "A single event, appointment, or meeting in a calendar",
                     "purpose": [
                         "TEMPORAL_ANCHOR, STATE_RECORD"
@@ -605,733 +606,151 @@
         },
         "google-gmail": {
             "io": "stdio",
-            "control_prompt": "You are an intelligent agent with access to a user's Gmail account. Your goal is to help the user manage their emails by creating a multi-step plan of tool calls based on their natural language requests.\\n\\n***\\n### ## Core Principles for Planning\\n\\n1.  **Reason from Data Purpose:** First, identify the **purpose** of the data you need (e.g., `INTERACTION_LOG` to read conversations, `STRUCTURAL_CONTAINER` to find a label). Then, find tools that `return` data types (`data_provided`) with that purpose.\\n2.  **Distinguish Resources from References:** Pay close attention to the `returns` field. If a tool `returns: { \"items\": { \"is_reference_to\": \"email_message\" } }`, it means you only get an **ID**. Your next step must be to call a different tool (like `read-email`) to get the full resource details using that ID.\\n\\n***\\n### ## Your Planning Process\\n\\nFor every query, you must create and follow a plan:\\n\\n1.  **Deconstruct the Goal:** What is the user's objective? (e.g., \"find and label an email\").\\n2.  **Identify Required Data:** What information and `purpose` tags do you need? Do you need a full resource or just a reference to start?\\n3.  **Formulate a Multi-Step Plan:** If you need a `label_id` and an `email_id` to apply a label, your plan must include steps to get both of those IDs first.\\n4.  **Execute and Adapt:** Execute the plan step-by-step. If you can't find a resource, inform the user.\\n\\n***\\n### ## Example Thought Process\\n\\n**User Query:** \"Find the latest email from 'billing@example.com' and apply the 'Receipts' label to it.\"\\n\\n**Your internal thought process should be:**\\n\\n1.  **Goal:** Apply a label to an email.\\n2.  **Required Data:** The `apply-label` tool requires a `label_id` and an `email_id`. I have neither.\\n3.  **Plan:**\\n    * **Step 1:** Find the `label_id`. I will call the `list-labels` tool, which returns full `gmail_label` objects, to find the ID for the label named 'Receipts'.\\n    * **Step 2:** Find the `email_id`. I will call the `search-emails` tool with the query `from:billing@example.com`. This tool returns a *reference* to an `email_message`. I can extract the `email_id` from this reference.\\n    * **Step 3:** Call `apply-label` using the `label_id` from Step 1 and the `email_id` from Step 2.\\n4.  **Execute:** Begin by calling `list-labels`.",
+            "pull_prompt": "You are an intelligent email assistant that has access to a user's services via a set of tools. Your goal is to retrieve the latest data out of their Gmail account. You will do this by using the get-unread-emails tool, which returns you an object containing many threadIDs. For the FIRST 5 threadIDs, you will call read-email with the threadID as an argument, and return the response.",
+            "control_prompt": "You are an intelligent email assistant that has access to a user's services via a set of tools. Your goal is to help the user by translating their natural language requests into a precise, multi-step plan of tool calls.\n\n***\n### ## Core Principles for Planning\n\n1.  **Reason from Purpose, Not Just Name.** Your primary goal is to fulfill the user's intent. Before choosing a tool, first identify the **purpose** of the data you need (e.g., an `INTERACTION_LOG` to understand past conversations). Then, find tools that provide data types (`email_message`) with that purpose.\n\n2.  **The Unread-First Constraint.** You can only find emails by listing unread messages. The `get-unread-emails` tool is your ONLY way to discover emails. You cannot search for specific emails by sender, subject, or content if they have already been read. If a user asks for an email that is likely read, you must inform them of this limitation.\n\n3.  **Distinguish Between Resources and References.** Pay close attention to the `returns` field of each tool.\n    * If a tool `returns: { \"items\": { \"is_reference_to\": \"email_message\" } }`, you will only receive an **ID** (a reference). You must then devise a plan to use another tool to fetch the full resource.\n    * If a tool `returns: { \"items\": \"email_message\" }`, you will receive the full data object. The `read-email` tool is the only way to get the full content of an email using its ID.\n\n***\n### ## Your Planning Process\n\nFor every user query, you must follow this four-step process:\n\n1.  **Deconstruct the Goal:** What is the user's ultimate objective? (e.g., \"read my latest email,\" \"send a message\").\n2.  **Identify Required Data:** What specific pieces of information, especially an `email_id`, do you need to fulfill the goal? Can you obtain this ID given the Unread-First Constraint?\n3.  **Formulate a Multi-Step Plan:** Create a sequence of tool calls. If you need an `email_id` to `trash-email`, your first step must be to call `get-unread-emails`.\n4.  **Execute and Adapt:** Execute the first step of your plan. If you cannot find the requested resource or the user's request is impossible due to tool limitations, inform the user and ask for clarification or an alternative action.\n\n***\n### ## Example Thought Process\n\n**User Query:** \"What's my latest unread email? Read it to me and then trash it.\"\n\n**Your internal thought process should be:**\n\n1.  **Goal:** Find the newest unread email, read its contents, and then delete it.\n2.  **Required Data:** The `read-email` and `trash-email` tools both require an `email_id`. I do not have this.\n3.  **Plan:**\n    * First, I need to find a *reference* to the latest unread email to get its ID. I will use the `get-unread-emails` tool.\n    * **Step 1:** Call `get-unread-emails`.\n    * **Step 2:** Extract the `email_id` from the first email in the returned list.\n    * **Step 3:** Call `read-email` using the `email_id` from Step 2 to get its content.\n    * **Step 4:** Present the email's sender, subject, and body to the user.\n    * **Step 5:** Ask the user for confirmation before deleting.\n    * **Step 6:** Upon confirmation, call `trash-email` using the same `email_id`.\n4.  **Execute:** Begin by calling `get-unread-emails`.\n\n---\n### ## Specific Instructions\n\n* When using `send-email`, the `recipient_id` parameter must be the recipient's full email address. If you do not know the email address, you must ask the user for it.\n* For the `trash-email` action, always state your plan and ask for user confirmation before executing the final step.",
             "startup": [
                 "python3",
                 "-m",
-                "gmail-mcp.src.gmail.server",
-                "--creds-file-path",
-                "credentials-web.json",
-                "--token-path",
-                "gmail-mcp/token.json"
+                "gmail_server"
             ],
-            "cwd": "",
+            "cwd": "gmail",
             "auth": true,
             "tools": [
                 {
-                    "name": "send-email",
-                    "description": "Send an email to a recipient",
+                    "name": "get_inbox",
+                    "description": "Get latest emails from inbox",
                     "params": {
                         "type": "object",
                         "properties": {
-                            "recipient_id": {
+                            "email_identifier": {
                                 "type": "string",
-                                "description": "The ID of the recipient to send the email to"
+                                "description": "The email address of the user to get the inbox for"
+                            }
+                        },
+                        "required": [
+                            "email_identifier"
+                        ]
+                    },
+                    "returns": {
+                        "type": "object",
+                        "properties": {
+                            "success": {
+                                "type": "boolean",
+                                "description": "Whether the operation was successful"
+                            },
+                            "emails": {
+                                "type": "array",
+                                "description": "The list of emails in the inbox",
+                                "items": "email_message"
+                            },
+                            "has_more": {
+                                "type": "boolean",
+                                "description": "Whether there are more emails in the inbox"
+                            }
+                        }
+                    }
+                },
+                {
+                    "name": "get_email_details",
+                    "description": "Get details about a specific email",
+                    "params": {
+                        "type": "object",
+                        "properties": {
+                            "email_identifier": {
+                                "type": "string",
+                                "description": "The email address of the user to get the email details for"
+                            },
+                            "msg_id": {
+                                "type": "string",
+                                "description": "The ID of the email to get the details for"
+                            }
+                        }
+                    },
+                    "returns": {
+                        "type": "object",
+                        "properties": {
+                            "success": {
+                                "type": "boolean",
+                                "description": "Whether the operation was successful"
+                            },
+                            "email": {
+                                "type": "email_message"
+                            }
+                        }
+                    }
+                },
+                {
+                    "name": "list_attachments",
+                    "description": "List attachments for a specific email",
+                    "params": {
+                        "type": "object",
+                        "properties": {
+                            "email_identifier": {
+                                "type": "string",
+                                "description": "The email address of the user to list the attachments for"
+                            },
+                            "msg_id": {
+                                "type": "string",
+                                "description": "The ID of the email to list the attachments for"
+                            }
+                        }
+                    },
+                    "returns": {
+                        "type": "object",
+                        "properties": {
+                            "success": {
+                                "type": "boolean",
+                                "description": "Whether the operation was successful"
+                            },
+                            "has_attachments": {
+                                "type": "boolean",
+                                "description": "Whether the email has attachments"
+                            },
+                            "message_id": {
+                                "type": "string",
+                                "description": "The ID of the email"
+                            }
+                        }
+                    }
+                },
+                {
+                    "name": "send_gmail",
+                    "description": "Send an email",
+                    "params": {
+                        "type": "object",
+                        "properties": {
+                            "email_identifier": {
+                                "type": "string",
+                                "description": "The email address of the user to send the email from"
+                            },
+                            "to": {
+                                "type": "string",
+                                "description": "The email address of the recipient"
                             },
                             "subject": {
                                 "type": "string",
                                 "description": "The subject of the email"
                             },
-                            "message": {
+                            "body": {
                                 "type": "string",
                                 "description": "The body of the email"
-                            }
-                        },
-                        "required": [
-                            "recipient_id",
-                            "subject",
-                            "message"
-                        ]
-                    },
-                    "returns": {
-                        "type": "object",
-                        "items": "email_message"
-                    }
-                },
-                {
-                    "name": "get-unread-emails",
-                    "description": "Get all unread emails in the user's inbox",
-                    "returns": {
-                        "type": "array",
-                        "items": {
-                            "is_reference_to": "email_message"
-                        }
-                    }
-                },
-                {
-                    "name": "read-email",
-                    "description": "Read an email from the user's inbox",
-                    "params": {
-                        "type": "object",
-                        "properties": {
-                            "email_id": {
-                                "type": "string",
-                                "description": "The ID of the email to read"
-                            }
-                        },
-                        "required": [
-                            "email_id"
-                        ]
-                    },
-                    "returns": {
-                        "type": "object",
-                        "items": "email_message"
-                    }
-                },
-                {
-                    "name": "open-email",
-                    "description": "Open an email from the user's inbox in the browser",
-                    "params": {
-                        "type": "object",
-                        "properties": {
-                            "email_id": {
-                                "type": "string",
-                                "description": "The ID of the email to open in the browser"
-                            }
-                        },
-                        "required": [
-                            "email_id"
-                        ]
-                    },
-                    "returns": {
-                        "type": "object",
-                        "properties": {
-                            "status": {
-                                "type": "string"
-                            }
-                        }
-                    }
-                },
-                {
-                    "name": "trash-email",
-                    "description": "Trash an email from the user's inbox",
-                    "params": {
-                        "type": "object",
-                        "properties": {
-                            "email_id": {
-                                "type": "string",
-                                "description": "The ID of the email to trash"
-                            }
-                        },
-                        "required": [
-                            "email_id"
-                        ]
-                    },
-                    "returns": {
-                        "type": "object",
-                        "properties": {
-                            "status": {
-                                "type": "string",
-                                "enum": [
-                                    "success",
-                                    "failure"
-                                ]
-                            }
-                        }
-                    }
-                },
-                {
-                    "name": "mark-email-as-read",
-                    "description": "Mark an email as read in the user's inbox",
-                    "params": {
-                        "type": "object",
-                        "properties": {
-                            "email_id": {
-                                "type": "string",
-                                "description": "The ID of the email to mark as read"
-                            }
-                        },
-                        "required": [
-                            "email_id"
-                        ]
-                    },
-                    "returns": {
-                        "type": "object",
-                        "properties": {
-                            "status": {
-                                "type": "string",
-                                "enum": [
-                                    "success",
-                                    "failure"
-                                ]
-                            }
-                        }
-                    }
-                },
-                {
-                    "name": "create-draft",
-                    "description": "Create a draft email in the user's draft folder",
-                    "params": {
-                        "type": "object",
-                        "properties": {
-                            "recipient_id": {
-                                "type": "string",
-                                "description": "The ID of the recipient to send the email to"
                             },
-                            "subject": {
-                                "type": "string",
-                                "description": "The subject of the email"
-                            },
-                            "message": {
-                                "type": "string",
-                                "description": "The body of the email"
-                            }
-                        },
-                        "required": [
-                            "recipient_id",
-                            "subject",
-                            "message"
-                        ]
-                    },
-                    "returns": {
-                        "type": "object",
-                        "items": "draft_message"
-                    }
-                },
-                {
-                    "name": "list-drafts",
-                    "description": "List all drafts in the user's draft folder",
-                    "returns": {
-                        "type": "array",
-                        "items": {
-                            "is_reference_to": "draft_message"
-                        }
-                    }
-                },
-                {
-                    "name": "list-labels",
-                    "description": "List all labels in the user's inbox",
-                    "returns": {
-                        "type": "array",
-                        "items": "gmail_label"
-                    }
-                },
-                {
-                    "name": "create-label",
-                    "description": "Create a new label in the user's inbox",
-                    "params": {
-                        "type": "object",
-                        "properties": {
-                            "name": {
-                                "type": "string",
-                                "description": "The name of the label to create"
-                            }
-                        },
-                        "required": [
-                            "name"
-                        ]
-                    },
-                    "returns": {
-                        "type": "object",
-                        "items": "gmail_label"
-                    }
-                },
-                {
-                    "name": "apply-label",
-                    "description": "Apply a label to an email",
-                    "params": {
-                        "type": "object",
-                        "properties": {
-                            "email_id": {
-                                "type": "string",
-                                "description": "The ID of the email to apply the label to"
-                            },
-                            "label_id": {
-                                "type": "string",
-                                "description": "The ID of the label to apply"
-                            }
-                        },
-                        "required": [
-                            "email_id",
-                            "label_id"
-                        ]
-                    },
-                    "returns": {
-                        "type": "object",
-                        "properties": {
-                            "status": {
-                                "type": "string",
-                                "enum": [
-                                    "success",
-                                    "failure"
-                                ]
-                            }
-                        }
-                    }
-                },
-                {
-                    "name": "remove-label",
-                    "description": "Remove a label from an email",
-                    "params": {
-                        "type": "object",
-                        "properties": {
-                            "email_id": {
-                                "type": "string",
-                                "description": "The ID of the email to remove the label from"
-                            },
-                            "label_id": {
-                                "type": "string",
-                                "description": "The ID of the label to remove"
-                            }
-                        },
-                        "required": [
-                            "email_id",
-                            "label_id"
-                        ]
-                    },
-                    "returns": {
-                        "type": "object",
-                        "properties": {
-                            "status": {
-                                "type": "string",
-                                "enum": [
-                                    "success",
-                                    "failure"
-                                ]
-                            }
-                        }
-                    }
-                },
-                {
-                    "name": "search-by-label",
-                    "description": "Search for emails by label",
-                    "params": {
-                        "type": "object",
-                        "properties": {
-                            "label_id": {
-                                "type": "string",
-                                "description": "The ID of the label to search by"
-                            }
-                        },
-                        "required": [
-                            "label_id"
-                        ]
-                    },
-                    "returns": {
-                        "type": "array",
-                        "items": {
-                            "is_reference_to": "email_message"
-                        }
-                    }
-                },
-                {
-                    "name": "list-filters",
-                    "description": "List all filters in the user's inbox",
-                    "returns": {
-                        "type": "array",
-                        "items": "gmail_filter"
-                    }
-                },
-                {
-                    "name": "get-filter",
-                    "description": "Get a filter by ID",
-                    "params": {
-                        "type": "object",
-                        "properties": {
-                            "filter_id": {
-                                "type": "string",
-                                "description": "The ID of the filter to get"
-                            }
-                        },
-                        "required": [
-                            "filter_id"
-                        ]
-                    },
-                    "returns": {
-                        "type": "object",
-                        "items": "gmail_filter"
-                    }
-                },
-                {
-                    "name": "create-filter",
-                    "description": "Create a new filter in the user's inbox",
-                    "params": {
-                        "type": "object",
-                        "properties": {
-                            "from_email": {
-                                "type": "string",
-                                "description": "The ID of the recipient to send the email to"
-                            },
-                            "to_email": {
-                                "type": "string",
-                                "description": "The ID of the recipient to send the email to"
-                            },
-                            "subject": {
-                                "type": "string",
-                                "description": "The subject of the email"
-                            },
-                            "query": {
-                                "type": "string",
-                                "description": "The query to search for"
-                            },
-                            "has_attachment": {
-                                "type": "boolean",
-                                "description": "Whether the email has an attachment"
-                            },
-                            "exclude_chats": {
-                                "type": "boolean",
-                                "description": "Whether to exclude chats"
-                            },
-                            "size_comparison": {
-                                "type": "string",
-                                "description": "The size comparison to search for"
-                            },
-                            "size": {
-                                "type": "integer",
-                                "description": "The size of the email"
-                            },
-                            "add_label_ids": {
+                            "attachment_paths": {
                                 "type": "array",
-                                "description": "The labels to add to the email"
-                            },
-                            "remove_label_ids": {
-                                "type": "array",
-                                "description": "The labels to remove from the email"
-                            },
-                            "forward_to": {
-                                "type": "string",
-                                "description": "The email to forward the email to"
+                                "description": "The paths of the attachments to send",
+                                "items": {
+                                    "type": "string",
+                                    "description": "The path of the attachment to send"
+                                }
                             }
                         }
                     },
-                    "anyOf": [
-                        {
-                            "required": [
-                                "from_email"
-                            ]
-                        },
-                        {
-                            "required": [
-                                "to_email"
-                            ]
-                        },
-                        {
-                            "required": [
-                                "subject"
-                            ]
-                        },
-                        {
-                            "required": [
-                                "query"
-                            ]
-                        },
-                        {
-                            "required": [
-                                "has_attachment"
-                            ]
-                        },
-                        {
-                            "required": [
-                                "exclude_chats"
-                            ]
-                        },
-                        {
-                            "required": [
-                                "size_comparison"
-                            ]
-                        },
-                        {
-                            "required": [
-                                "size"
-                            ]
-                        },
-                        {
-                            "required": [
-                                "add_label_ids"
-                            ]
-                        },
-                        {
-                            "required": [
-                                "remove_label_ids"
-                            ]
-                        },
-                        {
-                            "required": [
-                                "forward_to"
-                            ]
-                        }
-                    ],
-                    "returns": {
-                        "type": "object",
-                        "items": "gmail_filter"
-                    }
-                },
-                {
-                    "name": "delete-filter",
-                    "description": "Delete a filter by ID",
-                    "params": {
-                        "type": "object",
-                        "properties": {
-                            "filter_id": {
-                                "type": "string",
-                                "description": "The ID of the filter to delete"
-                            }
-                        },
-                        "required": [
-                            "filter_id"
-                        ]
-                    },
                     "returns": {
                         "type": "object",
                         "properties": {
-                            "status": {
-                                "type": "string",
-                                "enum": [
-                                    "success",
-                                    "failure"
-                                ]
-                            }
-                        }
-                    }
-                },
-                {
-                    "name": "search-emails",
-                    "description": "Search for emails by query",
-                    "params": {
-                        "type": "object",
-                        "properties": {
-                            "query": {
-                                "type": "string",
-                                "description": "The query to search for"
-                            },
-                            "max_results": {
-                                "type": "integer",
-                                "description": "The maximum number of results to return",
-                                "default": 50
-                            }
-                        },
-                        "required": [
-                            "query"
-                        ]
-                    },
-                    "returns": {
-                        "type": "array",
-                        "items": {
-                            "is_reference_to": "email_message"
-                        }
-                    }
-                },
-                {
-                    "name": "create-folder",
-                    "description": "Create a new folder in the user's inbox",
-                    "params": {
-                        "type": "object",
-                        "properties": {
-                            "name": {
-                                "type": "string",
-                                "description": "The name of the folder to create"
-                            }
-                        },
-                        "required": [
-                            "name"
-                        ]
-                    },
-                    "returns": {
-                        "type": "object",
-                        "items": "gmail_folder"
-                    }
-                },
-                {
-                    "name": "move-to-folder",
-                    "description": "Move an email to a folder",
-                    "params": {
-                        "type": "object",
-                        "properties": {
-                            "email_id": {
-                                "type": "string",
-                                "description": "The ID of the email to move"
-                            },
-                            "folder_id": {
-                                "type": "string",
-                                "description": "The ID of the folder to move the email to"
-                            }
-                        },
-                        "required": [
-                            "email_id",
-                            "folder_id"
-                        ]
-                    },
-                    "returns": {
-                        "type": "object",
-                        "properties": {
-                            "status": {
-                                "type": "string",
-                                "enum": [
-                                    "success",
-                                    "failure"
-                                ]
-                            }
-                        }
-                    }
-                },
-                {
-                    "name": "list-folders",
-                    "description": "List all folders in the user's inbox",
-                    "returns": {
-                        "type": "array",
-                        "items": "gmail_folder"
-                    }
-                },
-                {
-                    "name": "rename-label",
-                    "description": "Rename a label by ID",
-                    "params": {
-                        "type": "object",
-                        "properties": {
-                            "label_id": {
-                                "type": "string",
-                                "description": "The ID of the label to rename"
-                            },
-                            "new_name": {
-                                "type": "string",
-                                "description": "The new name of the label"
-                            }
-                        },
-                        "required": [
-                            "label_id",
-                            "new_name"
-                        ]
-                    },
-                    "returns": {
-                        "type": "object",
-                        "items": "gmail_label"
-                    }
-                },
-                {
-                    "name": "delete-label",
-                    "description": "Delete a label by ID",
-                    "params": {
-                        "type": "object",
-                        "properties": {
-                            "label_id": {
-                                "type": "string",
-                                "description": "The ID of the label to delete"
-                            }
-                        },
-                        "required": [
-                            "label_id"
-                        ]
-                    },
-                    "returns": {
-                        "type": "object",
-                        "properties": {
-                            "status": {
-                                "type": "string",
-                                "enum": [
-                                    "success",
-                                    "failure"
-                                ]
-                            }
-                        }
-                    }
-                },
-                {
-                    "name": "archive-email",
-                    "description": "Archive an email by ID",
-                    "params": {
-                        "type": "object",
-                        "properties": {
-                            "email_id": {
-                                "type": "string",
-                                "description": "The ID of the email to archive"
-                            }
-                        },
-                        "required": [
-                            "email_id"
-                        ]
-                    },
-                    "returns": {
-                        "type": "object",
-                        "properties": {
-                            "status": {
-                                "type": "string",
-                                "enum": [
-                                    "success",
-                                    "failure"
-                                ]
-                            }
-                        }
-                    }
-                },
-                {
-                    "name": "batch-archive",
-                    "description": "Archive a batch of emails by query",
-                    "params": {
-                        "type": "object",
-                        "properties": {
-                            "query": {
-                                "type": "string",
-                                "description": "The query to search for"
-                            },
-                            "max_emails": {
-                                "type": "integer",
-                                "description": "The maximum number of emails to archive",
-                                "default": 100
-                            }
-                        },
-                        "required": [
-                            "query"
-                        ]
-                    },
-                    "returns": {
-                        "type": "object",
-                        "properties": {
-                            "status": {
-                                "type": "string"
-                            },
-                            "archived_count": {
-                                "type": "integer"
-                            }
-                        }
-                    }
-                },
-                {
-                    "name": "list-archived",
-                    "description": "List all archived emails in the user's inbox",
-                    "params": {
-                        "type": "object",
-                        "properties": {
-                            "max_results": {
-                                "type": "integer",
-                                "description": "The maximum number of results to return",
-                                "default": 50
-                            }
-                        },
-                        "required": [
-                            "max_results"
-                        ]
-                    },
-                    "returns": {
-                        "type": "array",
-                        "items": {
-                            "is_reference_to": "email_message"
-                        }
-                    }
-                },
-                {
-                    "name": "restore-to-inbox",
-                    "description": "Restore an email to the user's inbox",
-                    "params": {
-                        "type": "object",
-                        "properties": {
-                            "email_id": {
-                                "type": "string",
-                                "description": "The ID of the email to restore"
-                            }
-                        },
-                        "required": [
-                            "email_id"
-                        ]
-                    },
-                    "returns": {
-                        "type": "object",
-                        "properties": {
-                            "status": {
-                                "type": "string",
-                                "enum": [
-                                    "success",
-                                    "failure"
-                                ]
+                            "success": {
+                                "type": "boolean",
+                                "description": "Whether the operation was successful"
                             }
                         }
                     }
@@ -1345,35 +764,6 @@
                         "INTERACTION_LOG",
                         "STATE_RECORD",
                         "ACTIONABLE_INTENT"
-                    ]
-                },
-                {
-                    "name": "draft_message",
-                    "description": "An unsent email message saved in the user's drafts.",
-                    "purpose": [
-                        "ACTIONABLE_INTENT",
-                        "KNOWLEDGE_BASE_ENTRY"
-                    ]
-                },
-                {
-                    "name": "gmail_label",
-                    "description": "A tag used to organize and categorize email messages.",
-                    "purpose": [
-                        "STRUCTURAL_CONTAINER"
-                    ]
-                },
-                {
-                    "name": "gmail_folder",
-                    "description": "A container for organizing emails, which is functionally equivalent to a label in Gmail.",
-                    "purpose": [
-                        "STRUCTURAL_CONTAINER"
-                    ]
-                },
-                {
-                    "name": "gmail_filter",
-                    "description": "An automated rule that applies actions to incoming emails based on user-defined criteria.",
-                    "purpose": [
-                        "KNOWLEDGE_BASE_ENTRY"
                     ]
                 }
             ]

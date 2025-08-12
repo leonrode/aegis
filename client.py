@@ -141,7 +141,7 @@ class MCPClient:
         self.process.stdin.flush()
         self.req_id += 1
 
-        time.sleep(1)
+        time.sleep(5)
 
         return self.messages[-1]
 

@@ -7,9 +7,14 @@ from llmcaller import LLMCaller
 import json
 
 class MCPController:
-    """Responsible for one MCPClient. Contains the prompt of how to use the MCP service.
+    """
+    Responsible for one MCPClient. Contains the prompt of how to use the MCP service.
     Accepts a query from the Sorter and starts the Gemini Tool Calling loop with the prompt
-    and associated function"""
+    and associated function.
+
+    Additionally enables the owner of the MCP service to pull all data from the MCP service.
+    
+    """
 
     def __init__(self, server_name, server_config):
         self.server_name = server_name
@@ -18,6 +23,8 @@ class MCPController:
         self.tools = []
         self.available_tools = {}
         self._load_config_into_functions()
+
+        print(f"Available tools: {self.available_tools}")
 
         self.tool_config = GenerateContentConfig(tools=self.tools)
 
@@ -42,9 +49,79 @@ class MCPController:
         # Also populate self.tools for the tool_config
         self.tools = [Tool(function_declarations=function_declarations)]
     
-    def accept_query(self, query):
-        conversation_history = [Part.from_text(text=self.server_config["control_prompt"]), Part.from_text(text=query)]
+
+    def pull_all_data(self):
+        """
+        Pulls all data from the MCP service.
+        """
+
+        query = f"""
+        You are the Sync Strategist for the Aegis AI assistant. Your goal is to generate a plan to keep the user's knowledge graph up-to-date.
+        This is done by pulling all data from the {self.server_name} via the tools provided.
+
+        Below is a complete list of all tools available from {self.server_name}.
+
+        **Available Tools:**
+        {self.server_config["tools"]}
+
+        **Your Task:**
+        Based ONLY on the tools provided, generate a JSON array of ALL of the essential, non-destructive, read-only tool calls that should be run to get a complete overview of the user's recent activity. Focus on "list", "get", or "search" functions. Do NOT include any tools that create, update, or delete data.
+
+        Remembe the principles of the MCP service. If a tool returns a reference, you NEED to use the tool that retrieves the resource by ID, and add that tool to the list.
+
+        **Example Output:**
+        [
+        {{
+            "tool_name": "get-events",
+            "params": {{ "maxResults": 10 }}
+        }},
+        {{
+            "tool_name": "list-calendars",
+            "params": {{}}
+        }}
+        ]
+        """
+
+        result = self.llm_caller.call_llm(query)
+
+        text = result.candidates[0].content.parts[0].text
+        if "```json" in text:
+            text = text.split("```json")[1].split("```")[0]
+
+
+
+        text = json.loads(text)
+
+        # print(text)
+
+        data = []
+
+        for tool in text:
+            print(f"Calling tool: {tool['tool_name']} with params: {tool['params']}")
+            response = self.available_tools[tool["tool_name"]](tool["tool_name"], tool["params"])
+            print(f"Response: {response}")
+            obj = response["result"]
+
+            if response["result"]:
+                obj = response["result"]
+                if "content" in obj:
+                    obj = obj["content"][0]
+
+                    if obj["type"] == "text":
+                        obj = json.loads(obj["text"])
+            
+
+            # clean up the obj
+
+            data.append(obj)
+
+        return data
+
+
+    def accept_query(self, query, prompt="control_prompt"):
+        conversation_history = [Part.from_text(text=self.server_config[prompt]), Part.from_text(text=query)]
     
+        answered_once = False
         while True:
             print("\n--- Calling Gemini ---")
             
@@ -62,11 +139,14 @@ class MCPController:
             # Check if the model's response contains any function calls
             parts = candidate.content.parts or []
             has_function_calls = any(getattr(p, "function_call", None) for p in parts)
-            if not has_function_calls:
+            if not has_function_calls and answered_once:
                 # EXIT CONDITION: The model provided a final text answer
                 print("\n--- Final Answer from Gemini ---")
                 print(response.text)
-                break
+                return conversation_history
+                # return response.text.strip()
+
+            answered_once = True
 
             # --- The model wants to call one or more tools ---
             print("--- Gemini wants to call a tool ---")

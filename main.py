@@ -8,133 +8,247 @@ from dotenv import load_dotenv
 import os
 import json
 import time
+from neo4j_connector import Neo4JConnector
+from sorter import Sorter
+from llmcaller import LLMCaller
+from puller import Puller
 load_dotenv()
 
 class AegisEngine:
     def __init__(self):
-        self.client = MCPClient()
-        self.client.engage_mcp_server("google-calendar")
-        self.client.engage_mcp_server("google-gmail")
+        self.sorter = Sorter()
+        self.neo4j_connector = Neo4JConnector()
+        self.llm_caller = LLMCaller()
 
-        self.tools = []
-        self.available_tools = {}
-        self.load_manifest_into_functions()
+        self.puller = Puller(self.sorter)
 
-        print(self.tools)
-        print(self.available_tools)
-
-        self.tool_config = None
-        self.google_client = None
-        self.init_google_client()
+        self.latest_data = self.puller.pull_all_data()
 
 
+        for service_name in self.latest_data.keys():
+            graph = self.build_relationship_graph_from_data(self.latest_data[service_name], service_name)
+            cyphers = self.build_cyphers_from_graph(graph)
+            self.neo4j_connector.perform_cypher_query(cyphers)
 
-    def load_manifest_into_functions(self, path="aegis-manifest.json"):
-        with open(path, "r") as f:
-            manifest = json.load(f)
+            print(cyphers)
+        # res = self.sorter.accept_query("Can you find me the event I have on Tuesday this week?")
+        # graph = self.build_relationship_graph_from_data(res, "google-calendar")
+        # query = self.build_cyphers_from_graph(graph)
+        # self.neo4j_connector.perform_cypher_query(query)
 
-        # Build FunctionDeclaration objects from manifest tools and wrap them in a Tool
-        function_declarations = []
-        for _service_name, service_config in manifest.get("servers", {}).items():
-            for tool in service_config.get("tools", []):
-                fd = types.FunctionDeclaration(
-                    name=tool.get("name"),
-                    description=tool.get("description"),
-                    # The SDK accepts a JSON Schema dict here; it will be parsed into types.Schema
-                    parameters=tool.get("params", {"type": "object"}),
-                )
-                function_declarations.append(fd)
-                
-                self.available_tools[tool["name"]] = self.client.build_request_caller(_service_name)
+        self.graph_metadata = None
+        self.graph_metadata_string = None
+        self._get_graph_metadata()
 
 
-        if function_declarations:
-            self.tools = [types.Tool(function_declarations=function_declarations)]
-        else:
-            self.tools = []
-
-    def init_google_client(self):
-        self.tool_config = types.GenerateContentConfig(tools=self.tools)
-        self.google_client = genai.Client(vertexai=True, project=os.environ["GOOGLE_CLOUD_PROJECT"], location=os.environ["GOOGLE_CLOUD_LOCATION"])
-
-
-    def take_query(self, query):
-        print(query)
-        prompt = """
-        You are a helpful assistant that can use a WIDE variety of tools from the calendar, Gmail, and other services.
-        If a user asks for something related to the calendar, you should use the calendar tools available to you.
-        If a user asks for something related to Gmail, you should use the Gmail tools available to you.
-        Emails are given in the form of IDs. Once you have an email ID, you can use the appropriate Gmail tool to get the email content.
-
-
-        All tools you need are probably available to you. Use them.
-
-        You can use as many tools as you need to answer the user's query. Use them sequentially as you see fit. For example, to get the latest email,
-        you use the get-unread-emails tool, get the first email ID, then use the read-email tool to get the email content, and finally use the open-email tool to open the email in the browser.
-        """
-        conversation_history = [Part.from_text(text=prompt), Part.from_text(text=query)]
+        # self.accept_query("What event do I have in August")
     
-        while True:
-            print("\n--- Calling Gemini ---")
+    def _get_graph_metadata(self):
+        schema, data = self.neo4j_connector.get_graph_metadata()
+
+        # format the graph schema into a neat string
+
+        nodes = []
+        relationships = []
+
+        # print("GRAPH SCHEMA")
+        # print(schema)
+        # print("GRAPH DATA")
+        # print(data)
+        
+        # we go through the schema to understand the nodes
+        # and the data to understand the relationships
+
+        for entity in schema["value"].keys():
+            print(entity)
+            if schema["value"][entity]["type"] == "node":
+                properties = schema["value"][entity]["properties"]
+                obj = {
+                    "label": entity,
+                    "properties": []
+                }
+                for property in properties.keys():
+                    obj["properties"].append({
+                        "name": property,
+                        "type": properties[property]["type"]
+                    })
+                nodes.append(obj)
+        
+
+        # print(str(data["relationships"]).replace("'", "\"").replace("False", "false").replace("True", "true"))
+
+
+        for relationship in data["relationships"]:
+            obj = {
+                "source_label": relationship[0]["name"],
+                "target_label": relationship[2]["name"],
+                "type": relationship[1]
+            }
+            relationships.append(obj)
+
+        self.graph_metadata_string = f"Nodes: {nodes}\nRelationships: {relationships}"
+
+    def accept_query(self, query):
+        prompt = f"""
+        You are an expert Neo4j data analyst who translates natural language questions into precise, read-only Cypher queries. Your task is to generate a single, valid Cypher query that answers the user's question, based only on the provided graph schema.
+
+        ## Rules & Constraints
+        Strict Schema Adherence: You MUST strictly adhere to the node names, relationship types, and property names defined in the schema. Do NOT invent any labels, relationships, or properties that are not explicitly listed.
+
+        No Data Modification: You MUST NOT generate any queries that create, update, or delete data (e.g., no CREATE, SET, REMOVE, DELETE). Only generate queries that read data (e.g., MATCH, WHERE, RETURN).
+
+        Handle Ambiguity: If the user's question is ambiguous, generate a query that returns broader results that can help clarify their intent.
+
+        Unsupported Queries: If the user's question absolutely cannot be answered with the given schema, you must respond with the single word: Unsupported.
+
+        Output Format: Return ONLY the Cypher query text, with no explanations, preamble, or markdown formatting.
+
+        ## Your Task
+        Graph Schema:
+        {self.graph_metadata_string}
+
+        User's Question:
+        {query}
+
+        Cypher Query:
+        """
+
+        response = self.llm_caller.call_llm(prompt)
+        text = response.candidates[0].content.parts[0].text
+
+        if "```cypher" in text:
+            text = text.replace("```cypher", "").replace("```", "")
+
+        print(text)
+
+        result = self.neo4j_connector.perform_cypher_query(text)
+        if result and result[0]:
+            print(result[0].data())
             
-            # Make the API call with the current history and available tools
-            response = self.google_client.models.generate_content(
-                model="gemini-2.0-flash-lite-001",
-                contents=conversation_history,
-                config=self.tool_config
-            )
-            
-            candidate = response.candidates[0]
+        
+            prompt2 = f"""
+            The user's question was: {query}
 
-            # Check if the model's response contains any function calls
-            parts = candidate.content.parts or []
-            has_function_calls = any(getattr(p, "function_call", None) for p in parts)
-            if not has_function_calls:
-                # EXIT CONDITION: The model provided a final text answer
-                print("\n--- Final Answer from Gemini ---")
-                print(response.text)
-                break
+            The Cypher query was: {text}
 
-            # --- The model wants to call one or more tools ---
-            print("--- Gemini wants to call a tool ---")
-            
-            # Append the model's request to the history for the next turn
-            conversation_history.append(candidate.content)
+            The result was: {result}
 
-            # Prepare a list to hold the results of our tool calls
-            function_responses = []
+            From this result, please provide a summary of what was found as an answer to the user's question.
 
-            # Execute all function calls requested by the model in this turn
-            for part in parts:
-                if not getattr(part, "function_call", None):
-                    continue
-                function_call = part.function_call
-                function_name = function_call.name
-                
-                print(f"Executing function: {function_name} with args: {dict(function_call.args)}")
-                
-                if function_name in self.available_tools:
-                    # Look up the function in our "toolbox" and call it
-                    function_to_call = self.available_tools[function_name]
-                    tool_result = function_to_call(function_name, function_call.args)
-                    print(tool_result)
-                    # Append the result to our list of responses
-                    function_responses.append(Part.from_function_response(
-                        name=function_name,
-                        response={"result": tool_result}
-                    ))
-                else:
-                    print(f"Error: Function '{function_name}' not found.")
-            
-            # Append the tool execution results to the conversation history
-            print("Function responses: ", function_responses)
-            conversation_history.extend(function_responses)
-            # The loop will now continue, sending the tool results back to Gemini
-            time.sleep(2)
+            Answer:
+            """
 
+            response2 = self.llm_caller.call_llm(prompt2)
+            text2 = response2.candidates[0].content.parts[0].text
 
+            print(text2)
+
+        
+
+    def build_relationship_graph_from_data(self, data, service_name):
+
+        purposes = None
+        with open("aegis-manifest.json", "r") as f:
+            manifest = json.load(f)
+            purposes = manifest["servers"][service_name]["data"]
+
+        
+
+        cleaned = self.llm_caller.call_llm(f"""
+        You are an expert text-cleaning and summarization engine. Your task is to extract the single, most important call to action or key message from the provided email content.
+
+You MUST ignore all boilerplate text, such as "View in browser" links, unsubscribe instructions, and company addresses. You MUST remove all formatting artifacts, extra whitespace, and links that are not central to the main message.
+
+Return ONLY the clean, essential text. If there is no meaningful content, return an empty string.
+
+**Messy Content:**
+---
+{data}
+---
+**Cleaned Text:**
+        """)
+
+        print(cleaned)
+
+        prompt = f"""
+        You are a data architect. Your job is to convert the following text into a structured graph, adhering to a strict JSON schema. Identify all key entities as nodes and the connections between them as relationships. The provided 'purpose' tag describes the primary node.
+
+        ## Output Specification
+        You must return ONLY a single JSON object. This object must contain two keys: nodes and relationships.
+
+        The nodes array: Each object in this array represents an entity and must contain the following keys:
+
+        "id": A unique, temporary string you create for linking (e.g., "node1", "node2").
 
 
+        "label": A general, one-word category for the entity (e.g., "person", "event", "email", "organization"). Use underscores for multi-word labels.
 
+        "properties": An object of key-value pairs describing the entity.
+
+        The relationships array: Each object in this array represents a connection and must contain the following keys:
+
+        "source_id": The id of the node where the relationship starts.
+
+        "target_id": The id of the node where the relationship ends.
+
+        "type": An uppercase verb describing the relationship (e.g., "SENT", "ATTENDED", "ABOUT").
+
+        ## Example
+        Input Data: New email from alice@example.com about the 'Q3 Budget'.
+        Purpose Tag: INTERACTION_LOG
+
+        Correct JSON Output:
+
+        ## Your Task
+        Now, perform this task for the following data. Use the provided purpose tags to help determine the labels and properties of the nodes.
+
+        Available Purpose Tags:
+        {purposes}
+
+        Input Data:
+        {cleaned}
+        """
+
+
+        response = self.llm_caller.call_llm(prompt)
+        print(response)
+        text = response.candidates[0].content.parts[0].text
+
+        if "```json" in text:
+            text = text.replace("```json", "").replace("```", "")
+        text = json.loads(text)
+
+        return text
+    
+    def build_cyphers_from_graph(self, graph):
+        cypher_parts = []
+        node_vars = {}  # Maps temp JSON IDs to Cypher variable names
+
+        # Create MERGE statements for nodes
+        for i, node in enumerate(graph.get("nodes", [])):
+            var = f"n{i}"
+            node_vars[node['id']] = var
+            # Escape single quotes in property values
+            props = {k: str(v).replace("'", "\\'") for k, v in node['properties'].items()}
+            prop_string = ", ".join([f"{k}: '{v}'" for k, v in props.items()])
+
+            print(node)
+            cypher_parts.append(f"MERGE ({var}:{node['label']} {{{prop_string}}})")
+
+        # Create MERGE statements for relationships
+        for rel in graph.get("relationships", []):
+            source_var = node_vars.get(rel['source_id'])
+            target_var = node_vars.get(rel['target_id'])
+            if source_var and target_var:
+                cypher_parts.append(f"MERGE ({source_var})-[:{rel['type']}]->({target_var})")
+
+        return "\n".join(cypher_parts)
+       
+        # nowe 
 aegis = AegisEngine()
-aegis.take_query("Can you get me all unread emails in my inbox? When you get all the email IDs, take the first one and use the read-email tool to get the email content. Then use the open-email tool to open the email in the browser.")
+# graph = aegis.build_relationship_graph_from_data("New calendar event 'Project Phoenix Sync' with attendee 'bob@example.com'.", "google-calendar")
+# queries = aegis.build_cyphers_from_graph(graph)
+
+# for query in queries:
+#     aegis.neo4j_connector.perform_cypher_query(query)
+#     print(query)

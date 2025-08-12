@@ -23,6 +23,16 @@ class Sorter:
 
         
 
+    def pull_all_data(self):
+        data = {}
+        for service_name in self.mcp_controllers:
+            data[service_name] = self.mcp_controllers[service_name].pull_all_data()
+
+        print("DATA PULLED")
+        print(data)
+
+        return data
+
     def accept_query(self, query):
         """Decides which MCP client to use to answer the query, and fowards the query to the appropriate MCP client"""
 

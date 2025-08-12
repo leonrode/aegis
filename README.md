@@ -1,91 +1,26 @@
 # aegis
 
-MCP Client
+## Introduction 
 
-In connecting with an MCP server, the following methods are assumed to be exposed in accordance with MCP Spec.
+Aegis is designed to be a proactive personal assistant that lives in your digital world. 
 
-1. `initialize`
+> Aegis is still under development
 
-Initialize the connection between MCP client and server
+Most interaction that we humans make with AI is in the form of a chat conversation, where humans prompt the AI often for information, and, more frequently, to take action on the human's behalf. This way of communication is one-sided, in that the AI application only reads and changes data on demand. This means that the cognitive load of *deciding* that a task must be done is still borne by the human. 
 
-2. `tools/list`
-Example Request:
-```json
-{
-  "jsonrpc": "2.0",
-  "id": 1,
-  "method": "tools/list",
-  "params": {
-    "cursor": "optional-cursor-value"
-  }
-}
-```
-Example Response:
-```json
-{
-  "jsonrpc": "2.0",
-  "id": 1,
-  "result": {
-    "tools": [
-      {
-        "name": "get_weather",
-        "title": "Weather Information Provider",
-        "description": "Get current weather information for a location",
-        "inputSchema": {
-          "type": "object",
-          "properties": {
-            "location": {
-              "type": "string",
-              "description": "City name or zip code"
-            }
-          },
-          "required": ["location"]
-        }
-      }
-    ],
-    "nextCursor": "next-page-cursor"
-  }
-}
-```
+Aegis aims to change that.
 
-3. `tools/call`
+Aegis has access to a constantly evolving knowledge graph about your digital life. From this graph, Aegis can come up with many ways to determine how to, for example, resolve scheduling conflicts via Google Calendar, remind you to wish a happy birthday to a relative via your WhatsApp messages, or suggest any other way to relieve some cognitive load off a person's full plate.
 
-Example Request:
-```json
-{
-  "jsonrpc": "2.0",
-  "id": 2,
-  "method": "tools/call",
-  "params": {
-    "name": "get_weather",
-    "arguments": {
-      "location": "New York"
-    }
-  }
-}
-```
+## Technicals
 
-Example Response:
-```json
-{
-  "jsonrpc": "2.0",
-  "id": 2,
-  "result": {
-    "content": [
-      {
-        "type": "text",
-        "text": "Current weather in New York:\nTemperature: 72°F\nConditions: Partly cloudy"
-      }
-    ],
-    "isError": false
-  }
-}
-```
+Aegis is designed to communicate with third party services though the Model Context Protocol (MCP). MCP servers expose **tools**, stateful methods accessible to LLMs to use at their discretion. Aegis is designed to plug and play with any MCP server, after a call to its `tools/list` method and a meta-control prompt.
 
-A tool definition includes:
-name: Unique identifier for the tool
-title: Optional human-readable name of the tool for display purposes.
-description: Human-readable description of functionality
-inputSchema: JSON Schema defining expected parameters
-outputSchema: Optional JSON Schema defining expected output structure
-annotations: optional properties describing tool behavior
+The `MCPClient` object is responsible for performing `send_request` calls to one MCP client given a `method` and arguments. It is the edge interface between Aegis and the MCP service. An `MCPClient` is controlled by an `MCPController`, which injects the service control prompt along with a user query into an `LLMCaller` which decides on the tool calls to make. The `MCPClient` is then used accordingly.
+
+Aegis performs a full data pull regularly in the background ny dynamically extracting data nodes and their relationships, and generating Cypher queries suitable for a Neo4J AuraDB in the cloud.
+
+User queries are converted to Cypher queries given knowledge graph metadata, and performed against the AuraDB itself (not routed into the `MCPClient`).
+
+
+

@@ -1,5 +1,9 @@
-from sorter import Sorter
+from main import AegisEngine
+from dotenv import load_dotenv
+import json
 
-sorter = Sorter()
+load_dotenv()
 
-print(sorter.accept_query("What are the latest emails in my inbox? Can you tell me what's in the most recent one?"))
+
+aegis = AegisEngine()
+aegis.accept_query("What events do I have?")
