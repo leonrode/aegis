@@ -4,7 +4,7 @@
 
 Aegis is designed to be a knowledgeable assistant that lives in your digital world. 
 
-Aegis has access to a constantly evolving knowledge graph about your digital life. From this graph, Aegis can come up with many ways to determine how to, for example, resolve scheduling conflicts via Google Calendar, remind you to wish a happy birthday to a relative via your WhatsApp messages, or suggest any other way to relieve some cognitive load off a person's full plate.
+Aegis has access to a constantly evolving knowledge graph about your digital life.
 
 ## Technicals
 
